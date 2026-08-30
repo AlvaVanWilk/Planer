@@ -31,8 +31,15 @@ const dringlichkeit = (t, heute) => {
 const W_BONUS = { 1: -6, 2: 0, 3: 2 };
 const bewertet = (t) => t.aufwand && t.wirkung;
 const wert = (t, heute) => bewertet(t) ? 6 * dringlichkeit(t, heute) + (4 - t.aufwand) + W_BONUS[t.wirkung] : null;
+// Ein von Hand nach unten geschobener Eintrag traegt einen Versatz, der nur
+// am Tag des Schiebens gilt. Am naechsten Tag zaehlt wieder die reine Rechnung.
+const schubVon = (t, heute) => (t.schubTag === heute ? (t.schub || 0) : 0);
+const effWert = (t, heute) => {
+  const w = wert(t, heute);
+  return w == null ? null : w + schubVon(t, heute);
+};
 const nachRang = (heute) => (a, b) =>
-  wert(b, heute) - wert(a, heute) || dringlichkeit(b, heute) - dringlichkeit(a, heute) ||
+  effWert(b, heute) - effWert(a, heute) || dringlichkeit(b, heute) - dringlichkeit(a, heute) ||
   b.wirkung - a.wirkung || a.aufwand - b.aufwand || a.angelegt - b.angelegt;
 
 /* ---------- Murmeln ---------- */
@@ -170,6 +177,10 @@ const klang = {
     note(c, { f: hz(stufe), dauer: 0.44, laut: 0.105, anstieg: 0.018, ober: 0.22, gleit: 0.985 });
     note(c, { f: hz(stufe) * 1.5, start: 0.055, dauer: 0.3, laut: 0.032, anstieg: 0.022, ober: 0 });
   },
+  schub() {
+    if (!this.an) return; const c = holeCtx(); if (!c) return;
+    note(c, { f: hz(3), dauer: 0.2, laut: 0.045, anstieg: 0.012, ober: 0.12, gleit: 0.86 });
+  },
   fund() {
     if (!this.an) return; const c = holeCtx(); if (!c) return;
     [2, 4, 7].forEach((st, i) =>
@@ -241,7 +252,16 @@ const CSS = `
 .rf-rang {
   font-family:'JetBrains Mono',monospace; font-weight:500; font-size:12px; color:#B8BDBF;
   width:20px; flex:none; text-align:right; font-variant-numeric:tabular-nums;
+  border:0; background:none; padding:0; line-height:1.4;
 }
+.rf-rang:not(:disabled) { cursor:pointer; }
+.rf-rang:not(:disabled):hover { color:var(--ink); }
+.rf-rang:focus-visible { outline:2px solid var(--ink); outline-offset:2px; border-radius:4px; }
+.rf-rang i { display:none; font-style:normal; }
+.rf-rang:not(:disabled):hover b { display:none; }
+.rf-rang:not(:disabled):hover i { display:inline; }
+.rf-rang b { font-weight:500; }
+.rf-rang[data-geschoben="true"] b::after { content:"·"; margin-left:1px; }
 .rf-name {
   flex:1; min-width:0; font-size:15.5px; font-weight:500; border:0; background:none;
   font-family:inherit; color:var(--ink); padding:4px 0; border-radius:4px;
@@ -850,6 +870,23 @@ export default function Planer() {
 
   const aendern = (id, felder) => setTasks((alt) => alt.map((t) => (t.id === id ? { ...t, ...felder } : t)));
 
+  // Setzt den Wert genau zwischen den naechsten und den uebernaechsten Eintrag,
+  // damit die Aufgabe exakt eine Position faellt - auch bei Gleichstand.
+  const runter = (t) => {
+    const i = sortiert.findIndex((x) => x.id === t.id);
+    if (i < 0 || i >= sortiert.length - 1) return;
+    const wn = effWert(sortiert[i + 1], heute);
+    const wna = sortiert[i + 2] ? effWert(sortiert[i + 2], heute) : wn - 1;
+    const ziel = (wn + Math.min(wna, wn - 0.001)) / 2;
+    aendern(t.id, { schub: ziel - wert(t, heute), schubTag: heute });
+    klang.schub();
+  };
+
+  const zurueckSchieben = (t) => {
+    aendern(t.id, { schub: 0, schubTag: null });
+    klang.haken();
+  };
+
   const landen = (t, m) => {
     klang.murmel(m.wert);
     setGlaeser((gs) => gs.map((g) => (g.id === t.glas ? { ...g, murmeln: [...g.murmeln, m] } : g)));
@@ -966,10 +1003,19 @@ export default function Planer() {
 
   const Zeile = (t, rang) => {
     const w = wert(t, heute);
+    const geschoben = schubVon(t, heute) !== 0;
     return (
       <li key={t.id} ref={(el) => el && refs.current.set(t.id, el)}
         data-weg={weg === t.id || undefined} className={`rf-row${t.fertig ? " rf-erledigt" : ""}`}>
-        <span className="rf-rang" title={w ? `Wert ${Math.round(w)}` : "noch nicht eingeordnet"}>{rang ?? "?"}</span>
+        <button className="rf-rang" disabled={rang == null || t.fertig}
+          data-geschoben={geschoben || undefined}
+          onClick={() => runter(t)}
+          aria-label={rang == null ? "noch nicht eingeordnet" : `Platz ${rang}, eine Position nach unten schieben`}
+          title={rang == null ? "noch nicht eingeordnet"
+            : geschoben ? `Wert ${Math.round(w)} · heute von Hand nach unten geschoben`
+            : `Wert ${Math.round(w)} · tippen schiebt eine Position nach unten`}>
+          <b>{rang ?? "?"}</b><i>&darr;</i>
+        </button>
         <input className="rf-name" value={t.name} aria-label="Aufgabe"
           onFocus={() => setFokus(t.id)} onBlur={() => setFokus((f) => (f === t.id ? null : f))}
           onChange={(e) => aendern(t.id, { name: e.target.value })} />
@@ -982,6 +1028,10 @@ export default function Planer() {
           </div>
         )}
         <span className="rf-slot">
+          {fokus === t.id && geschoben && (
+            <button title="Schub zurücknehmen" aria-label="Handverschiebung zurücknehmen"
+              onPointerDown={(e) => e.preventDefault()} onClick={() => zurueckSchieben(t)}>&uarr;</button>
+          )}
           {fokus === t.id && glaeser.length > 1 && (
             <VerschiebeMenu glaeser={glaeser} aktiv={t.glas} onWaehl={(gid) => aendern(t.id, { glas: gid })} />
           )}
