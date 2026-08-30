@@ -31,16 +31,37 @@ const dringlichkeit = (t, heute) => {
 const W_BONUS = { 1: -6, 2: 0, 3: 2 };
 const bewertet = (t) => t.aufwand && t.wirkung;
 const wert = (t, heute) => bewertet(t) ? 6 * dringlichkeit(t, heute) + (4 - t.aufwand) + W_BONUS[t.wirkung] : null;
-// Ein von Hand nach unten geschobener Eintrag traegt einen Versatz, der nur
-// am Tag des Schiebens gilt. Am naechsten Tag zaehlt wieder die reine Rechnung.
-const schubVon = (t, heute) => (t.schubTag === heute ? (t.schub || 0) : 0);
-const effWert = (t, heute) => {
-  const w = wert(t, heute);
-  return w == null ? null : w + schubVon(t, heute);
-};
 const nachRang = (heute) => (a, b) =>
-  effWert(b, heute) - effWert(a, heute) || dringlichkeit(b, heute) - dringlichkeit(a, heute) ||
+  wert(b, heute) - wert(a, heute) || dringlichkeit(b, heute) - dringlichkeit(a, heute) ||
   b.wirkung - a.wirkung || a.aufwand - b.aufwand || a.angelegt - b.angelegt;
+
+// Von Hand nach unten geschoben heisst: "sitz hinter DIESER Aufgabe" - nicht
+// "habe diesen Wert". Werte versagen bei Gleichstand, Anker nicht. Der Schub
+// gilt nur am Tag des Schiebens; danach zaehlt wieder die reine Rechnung.
+const geschobenAm = (t, heute) => t.schubTag === heute && !!t.schubNach;
+
+function ordne(liste, heute) {
+  const alle = [...liste].sort(nachRang(heute));
+  const ids = new Set(alle.map((t) => t.id));
+  const aktiv = alle.filter((t) => geschobenAm(t, heute) && ids.has(t.schubNach));
+  if (!aktiv.length) return alle;
+
+  const raus = new Set(aktiv.map((t) => t.id));
+  const reihe = alle.filter((t) => !raus.has(t.id));
+  let offen = [...aktiv], weiter = true;
+  while (offen.length && weiter) {           // Ketten aufloesen: erst Anker, dann Anhaenger
+    weiter = false;
+    offen = offen.filter((t) => {
+      const j = reihe.findIndex((x) => x.id === t.schubNach);
+      if (j < 0) return true;
+      reihe.splice(j + 1, 0, t);
+      weiter = true;
+      return false;
+    });
+  }
+  offen.forEach((t) => reihe.push(t));       // Notausgang, falls sich etwas im Kreis dreht
+  return reihe;
+}
 
 /* ---------- Murmeln ---------- */
 const STUFEN = {
@@ -254,13 +275,19 @@ const CSS = `
   width:20px; flex:none; text-align:right; font-variant-numeric:tabular-nums;
   border:0; background:none; padding:0; line-height:1.4;
 }
+.rf-rang { position:relative; }
 .rf-rang:not(:disabled) { cursor:pointer; }
-.rf-rang:not(:disabled):hover { color:var(--ink); }
+/* Unsichtbar vergroesserte Tippflaeche: rund 44px, ohne das Layout zu aendern */
+.rf-rang:not(:disabled)::before { content:""; position:absolute; inset:-14px -12px -14px -16px; }
 .rf-rang:focus-visible { outline:2px solid var(--ink); outline-offset:2px; border-radius:4px; }
 .rf-rang i { display:none; font-style:normal; }
-.rf-rang:not(:disabled):hover b { display:none; }
-.rf-rang:not(:disabled):hover i { display:inline; }
 .rf-rang b { font-weight:500; }
+.rf-rang[data-geschoben="true"] b { color:#98A0A3; }
+@media (hover:hover) {
+  .rf-rang:not(:disabled):hover { color:var(--ink); }
+  .rf-rang:not(:disabled):hover b { display:none; }
+  .rf-rang:not(:disabled):hover i { display:inline; }
+}
 .rf-rang[data-geschoben="true"] b::after { content:"·"; margin-left:1px; }
 .rf-name {
   flex:1; min-width:0; font-size:15.5px; font-weight:500; border:0; background:none;
@@ -290,6 +317,15 @@ const CSS = `
   width:25px; height:25px; border:0; background:none; border-radius:7px; cursor:pointer;
   color:#C2C7C9; font-size:12px; display:grid; place-items:center; padding:0;
 }
+.rf-zurueck {
+  position:relative; width:30px; height:30px; flex:none; border:2px solid #D6DAD7;
+  background:var(--surface); border-radius:50%; cursor:pointer; padding:0; color:var(--muted);
+  display:grid; place-items:center; font-size:14px; line-height:1;
+  transition:border-color 140ms, color 140ms, transform 160ms cubic-bezier(.3,1.6,.5,1);
+}
+.rf-zurueck::before { content:""; position:absolute; inset:-8px; }
+.rf-zurueck:hover { border-color:var(--ink); color:var(--ink); transform:scale(1.08); }
+.rf-zurueck:active { transform:scale(.9); }
 .rf-slot button:hover { background:#EDEEEA; color:var(--ink); }
 .rf-slot button.rf-loeschen:hover { background:#F3E3E3; color:${FRIST_FARBE}; }
 
@@ -827,7 +863,7 @@ export default function Planer() {
   const meine = tasks.filter((t) => t.glas === glas.id);
   const aktiv = meine.filter((t) => !t.fertig);
   const neu = aktiv.filter((t) => !bewertet(t)).sort((a, b) => b.angelegt - a.angelegt);
-  const sortiert = aktiv.filter(bewertet).sort(nachRang(heute));
+  const sortiert = ordne(aktiv.filter(bewertet), heute);
   const fertig = meine.filter((t) => t.fertig);
 
   // Kapazität lebt: Murmeln plus der aktuelle Wert aller noch offenen Aufgaben.
@@ -870,20 +906,21 @@ export default function Planer() {
 
   const aendern = (id, felder) => setTasks((alt) => alt.map((t) => (t.id === id ? { ...t, ...felder } : t)));
 
-  // Setzt den Wert genau zwischen den naechsten und den uebernaechsten Eintrag,
-  // damit die Aufgabe exakt eine Position faellt - auch bei Gleichstand.
   const runter = (t) => {
     const i = sortiert.findIndex((x) => x.id === t.id);
     if (i < 0 || i >= sortiert.length - 1) return;
-    const wn = effWert(sortiert[i + 1], heute);
-    const wna = sortiert[i + 2] ? effWert(sortiert[i + 2], heute) : wn - 1;
-    const ziel = (wn + Math.min(wna, wn - 0.001)) / 2;
-    aendern(t.id, { schub: ziel - wert(t, heute), schubTag: heute });
+    const n = sortiert[i + 1];
+    setTasks((alt) => alt.map((x) => {
+      if (x.id === t.id) return { ...x, schubNach: n.id, schubTag: heute };
+      // Haengt der Nachbar seinerseits an dieser Aufgabe, entstuende ein Kreis.
+      if (x.id === n.id && x.schubNach === t.id) return { ...x, schubNach: null, schubTag: null };
+      return x;
+    }));
     klang.schub();
   };
 
   const zurueckSchieben = (t) => {
-    aendern(t.id, { schub: 0, schubTag: null });
+    aendern(t.id, { schubNach: null, schubTag: null });
     klang.haken();
   };
 
@@ -1003,7 +1040,7 @@ export default function Planer() {
 
   const Zeile = (t, rang) => {
     const w = wert(t, heute);
-    const geschoben = schubVon(t, heute) !== 0;
+    const geschoben = geschobenAm(t, heute);
     return (
       <li key={t.id} ref={(el) => el && refs.current.set(t.id, el)}
         data-weg={weg === t.id || undefined} className={`rf-row${t.fertig ? " rf-erledigt" : ""}`}>
@@ -1028,10 +1065,6 @@ export default function Planer() {
           </div>
         )}
         <span className="rf-slot">
-          {fokus === t.id && geschoben && (
-            <button title="Schub zurücknehmen" aria-label="Handverschiebung zurücknehmen"
-              onPointerDown={(e) => e.preventDefault()} onClick={() => zurueckSchieben(t)}>&uarr;</button>
-          )}
           {fokus === t.id && glaeser.length > 1 && (
             <VerschiebeMenu glaeser={glaeser} aktiv={t.glas} onWaehl={(gid) => aendern(t.id, { glas: gid })} />
           )}
@@ -1040,6 +1073,10 @@ export default function Planer() {
               onPointerDown={(e) => e.preventDefault()} onClick={() => loeschen(t.id)}>✕</button>
           )}
         </span>
+        {geschoben && !t.fertig && (
+          <button className="rf-zurueck" title="Zurück an den berechneten Platz"
+            aria-label="Handverschiebung zurücknehmen" onClick={() => zurueckSchieben(t)}>&uarr;</button>
+        )}
         <button className="rf-haken" aria-label={t.fertig ? "Wieder öffnen" : "Erledigt"}
           onClick={(e) => (t.fertig ? wiederOeffnen(t) : abhaken(t, e.currentTarget))}>✓</button>
       </li>
