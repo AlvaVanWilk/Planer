@@ -40,3 +40,16 @@ sich die Daten auch auf ein anderes Gerät übertragen.
 
 `index.html` ist erzeugt und enthält React fest eingebaut — dort nicht
 von Hand editieren. Die lesbare Quelle ist `planer.jsx`.
+
+---
+
+# Funkel – Diamond Painting
+
+Im Ordner `diamond/` liegt ein kleines Diamond-Painting-Spiel, ebenfalls
+eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
+`https://BENUTZERNAME.github.io/REPONAME/diamond/`.
+
+- Unten eine Farbe aus der Ablage wählen, dann auf jedes Feld mit dem passenden Buchstaben tippen.
+- Ein Finger verschiebt, zwei Finger zoomen (am Rechner: Mausrad, Tasten `A`–`E`, `+`, `-`, `0`).
+- Auf der Leinwand ist nichts vorgefärbt – welches Bild entsteht, sieht man erst beim Legen.
+- Der Fortschritt wird im Browser gespeichert.
