@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Funkel">
+<meta name="theme-color" content="#1b1626">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<title>Funkel – Diamond Painting</title>
+<style>
+  :root {
+    --bg: #1b1626;
+    --bg2: #251e33;
+    --panel: rgba(37, 30, 51, 0.92);
+    --line: rgba(255, 255, 255, 0.08);
+    --text: #f3eefb;
+    --muted: #a99fbd;
+    --gold: #f2c766;
+    --sheet: #f6f1e6;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+  /* ---------- Kopfzeile ---------- */
+  header {
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(var(--bg), rgba(27, 22, 38, 0.85));
+    border-bottom: 1px solid var(--line);
+    z-index: 3;
+  }
+  .brand { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .brand b { font-size: 17px; letter-spacing: 0.02em; }
+  .brand span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .progress { height: 4px; border-radius: 4px; background: rgba(255,255,255,0.08); margin-top: 6px; overflow: hidden; }
+  .progress i { display: block; height: 100%; width: 0%; border-radius: 4px;
+    background: linear-gradient(90deg, #f2c766, #f7e3a7, #f2c766); background-size: 200% 100%;
+    transition: width .3s ease; animation: shine 3s linear infinite; }
+  @keyframes shine { to { background-position: -200% 0; } }
+  .iconbtn {
+    width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(255,255,255,0.04); color: var(--text);
+    display: grid; place-items: center; cursor: pointer; flex: none; padding: 0;
+  }
+  .iconbtn:active { transform: scale(0.94); }
+  .iconbtn svg { width: 20px; height: 20px; }
+
+  /* ---------- Leinwand ---------- */
+  #board {
+    position: relative; flex: 1; overflow: hidden; touch-action: none;
+    background:
+      radial-gradient(ellipse at 50% 30%, #2f2642 0%, transparent 70%),
+      var(--bg);
+  }
+  #board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #fx { pointer-events: none; }
+  #toast {
+    position: absolute; left: 50%; top: 14px; transform: translate(-50%, -10px);
+    background: rgba(20, 16, 30, 0.9); border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 999px; font-size: 14px; color: var(--text);
+    opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .zoombar { position: absolute; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .zoombar .iconbtn { background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+
+  /* ---------- Farbablage ---------- */
+  #tray {
+    display: flex; gap: 8px; justify-content: center;
+    padding: 10px 10px calc(env(safe-area-inset-bottom) + 10px);
+    background: linear-gradient(rgba(27,22,38,0.85), var(--bg));
+    border-top: 1px solid var(--line); z-index: 3;
+  }
+  .well {
+    flex: 1; max-width: 92px; min-width: 0;
+    border: 1px solid var(--line); border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    color: var(--text); padding: 8px 4px 7px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    transition: transform .18s cubic-bezier(.3,1.6,.5,1), border-color .2s, box-shadow .2s, background .2s;
+    position: relative; font: inherit;
+  }
+  .well img { width: 34px; height: 34px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+  .well .sym {
+    font-weight: 800; font-size: 15px; line-height: 1;
+    background: var(--sheet); color: #3b3646; border-radius: 6px; padding: 3px 7px;
+  }
+  .well .left { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .well.sel {
+    transform: translateY(-6px);
+    border-color: var(--gold);
+    box-shadow: 0 8px 24px -6px rgba(242, 199, 102, 0.45), inset 0 0 0 1px rgba(242,199,102,.35);
+    background: linear-gradient(180deg, rgba(242,199,102,0.16), rgba(255,255,255,0.03));
+  }
+  .well.done { opacity: .45; }
+  .well.done .left { color: var(--gold); }
+  .well.nudge { animation: nudge .5s ease; }
+  @keyframes nudge { 0%,100% { transform: translateY(0) } 30% { transform: translateY(-8px) } 60% { transform: translateY(0) } 80% { transform: translateY(-3px) } }
+
+  /* ---------- Menü & Dialoge ---------- */
+  .sheet-bg {
+    position: fixed; inset: 0; background: rgba(10, 8, 16, 0.55);
+    display: none; align-items: flex-end; justify-content: center; z-index: 10;
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  }
+  .sheet-bg.open { display: flex; animation: fade .2s ease; }
+  @keyframes fade { from { opacity: 0 } }
+  .card {
+    width: min(460px, 100%); background: var(--bg2); border: 1px solid var(--line);
+    border-radius: 22px 22px 0 0; padding: 20px 18px calc(env(safe-area-inset-bottom) + 18px);
+    animation: up .28s cubic-bezier(.2,.9,.3,1);
+  }
+  @media (min-width: 520px) { .sheet-bg { align-items: center; } .card { border-radius: 22px; } }
+  @keyframes up { from { transform: translateY(30px); opacity: 0 } }
+  .card h2 { margin: 0 0 6px; font-size: 20px; }
+  .card p { margin: 0 0 14px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px;
+  }
+  .row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .switch { width: 48px; height: 28px; border-radius: 99px; background: rgba(255,255,255,.12); position: relative; border: 0; cursor: pointer; flex: none; transition: background .2s; }
+  .switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .switch.on { background: var(--gold); }
+  .switch.on::after { transform: translateX(20px); }
+  .btn {
+    width: 100%; border: 0; border-radius: 14px; padding: 14px; font: inherit; font-weight: 700; font-size: 16px;
+    background: var(--gold); color: #2a2135; cursor: pointer; margin-top: 10px;
+  }
+  .btn.ghost { background: rgba(255,255,255,.07); color: var(--text); font-weight: 600; }
+  .btn.danger { background: rgba(232, 71, 79, 0.15); color: #ff9aa0; font-weight: 600; }
+  .stats { display: flex; gap: 10px; margin: 12px 0 4px; }
+  .stats div { flex: 1; background: rgba(255,255,255,.05); border-radius: 14px; padding: 10px; text-align: center; }
+  .stats b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stats span { font-size: 12px; color: var(--muted); }
+  #doneCard h2 { font-size: 24px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <b>Funkel</b>
+      <span id="sub">Motiv Nr. 1 · Geheim</span>
+      <div class="progress"><i id="bar"></i></div>
+    </div>
+    <button class="iconbtn" id="btnSound" aria-label="Ton an/aus"></button>
+    <button class="iconbtn" id="btnMenu" aria-label="Menü">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+    </button>
+  </header>
+
+  <div id="board">
+    <canvas id="base"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="toast"></div>
+    <div class="zoombar">
+      <button class="iconbtn" id="zIn" aria-label="Hineinzoomen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="iconbtn" id="zOut" aria-label="Herauszoomen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <button class="iconbtn" id="zFit" aria-label="Ganze Leinwand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    </div>
+  </div>
+
+  <nav id="tray"></nav>
+</div>
+
+<div class="sheet-bg" id="menu">
+  <div class="card">
+    <h2>Einstellungen</h2>
+    <p>Wähle unten eine Farbe aus der Ablage und tippe dann auf jedes Feld mit dem passenden Symbol. Mit einem Finger verschieben, mit zwei Fingern zoomen.</p>
+    <div class="row"><div>Ton<small>Klick beim Setzen eines Steins</small></div><button class="switch" id="swSound"></button></div>
+    <div class="row"><div>Vibration<small>Nur auf Geräten, die es unterstützen</small></div><button class="switch" id="swVib"></button></div>
+    <div class="row"><div>Suchhilfe<small>Symbol der gewählten Farbe hervorheben</small></div><button class="switch" id="swHint"></button></div>
+    <button class="btn ghost" id="btnClose">Weiter funkeln</button>
+    <button class="btn danger" id="btnReset">Von vorn beginnen</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="done">
+  <div class="card" id="doneCard">
+    <h2>Fertig! ✨</h2>
+    <p id="doneText"></p>
+    <div class="stats">
+      <div><b id="stStones">0</b><span>Steine</span></div>
+      <div><b id="stTime">0:00</b><span>Zeit</span></div>
+      <div><b id="stErr">0</b><span>Fehlgriffe</span></div>
+    </div>
+    <button class="btn" id="btnView">Bild ansehen</button>
+    <button class="btn ghost" id="btnAgain">Noch einmal legen</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   Motiv – wird aus Formen berechnet, damit man es im Code nicht "sieht".
+   ===================================================================== */
+const MOTIF = (() => {
+  const W = 40, H = 50, g = new Uint8Array(W * H);
+  const clouds = [[8, 9, 1.15], [33, 31, 1.0], [5, 34, 0.75], [27, 4, 0.6]];
+  const puffs = [[-2.4, 0.3, 1.9], [0, -0.7, 2.5], [2.5, 0.2, 1.9], [4.2, 0.8, 1.2], [-4, 0.8, 1.1]];
+  const inCloud = (x, y) => clouds.some(([cx, cy, s]) => {
+    const dx = (x - cx) / s, dy = (y - cy) / s;
+    if (dy > 1.5) return false;
+    return puffs.some(([a, b, r]) => (dx - a) ** 2 + (dy - b) ** 2 <= r * r);
+  });
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const cx = x + 0.5, cy = y + 0.5;
+    let c = 0;
+    if (Math.hypot(cx - 35, cy - 9) <= 4.3) c = 3;
+    if (inCloud(cx, cy)) c = 1;
+    if (cy > 43.5 + 1.8 * Math.sin(cx * 0.27 + 0.6) + 1.3 * Math.sin(cx * 0.09 + 2)) c = 4;
+    const X = 20, Y = 17, R = 10.6, B = 31.5;
+    let hw = -1;
+    if (cy <= Y) { const d = R * R - (cy - Y) ** 2; if (d > 0) hw = Math.sqrt(d); }
+    else if (cy < B) { const t = (cy - Y) / (B - Y); hw = Math.max(R * Math.pow(Math.cos(t * Math.PI / 2), 0.85), 1.7); }
+    if (hw > 0 && Math.abs(cx - X) <= hw) {
+      const u = Math.max(-1, Math.min(1, (cx - X) / hw));
+      const band = Math.min(4, Math.floor((Math.asin(u) / (Math.PI / 2) + 1) / 2 * 5));
+      c = band % 2 === 0 ? 2 : 3;
+      if (cy > B - 2.2) c = 3;
+    }
+    if (y >= 32 && y <= 34 && (x === 18 || x === 21)) c = 3;
+    if (y === 35 && x >= 17 && x <= 22) c = 2;
+    if (y >= 36 && y <= 38 && x >= 17 && x <= 22) c = 3;
+    g[y * W + x] = c;
+  }
+  return {
+    id: "ballon-v1",
+    name: "Heißluftballon über den Hügeln",
+    W, H, grid: g,
+    colors: [
+      { name: "Himmelblau", hex: "#5fb9e6", sym: "A" },
+      { name: "Wolkenweiß", hex: "#f3f6fa", sym: "B" },
+      { name: "Korallenrot", hex: "#e5424d", sym: "C" },
+      { name: "Sonnengelb", hex: "#f6c22c", sym: "D" },
+      { name: "Wiesengrün", hex: "#4fae4b", sym: "E" },
+    ],
+  };
+})();
+
+const { W, H } = MOTIF;
+const N = W * H;
+const TARGET = MOTIF.grid;
+const COLORS = MOTIF.colors;
+const totals = COLORS.map((_, k) => TARGET.reduce((n, v) => n + (v === k), 0));
+
+/* =====================================================================
+   Zustand & Speicher
+   ===================================================================== */
+const STORE = "funkel:" + MOTIF.id;
+const PREFS = "funkel:prefs";
+const placed = new Uint8Array(N);
+const left = totals.slice();
+let placedCount = 0, errors = 0, playMs = 0, lastAct = 0, selected = -1;
+let prefs = { sound: true, vib: true, hint: false };
+
+function load() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS) || "null");
+    if (p) prefs = Object.assign(prefs, p);
+  } catch (e) {}
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE) || "null");
+    if (s && typeof s.p === "string" && s.p.length === N) {
+      for (let i = 0; i < N; i++) if (s.p.charCodeAt(i) === 49) { placed[i] = 1; placedCount++; left[TARGET[i]]--; }
+      errors = s.e | 0; playMs = s.t || 0;
+    }
+  } catch (e) {}
+}
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      let s = "";
+      for (let i = 0; i < N; i++) s += placed[i] ? "1" : "0";
+      localStorage.setItem(STORE, JSON.stringify({ p: s, e: errors, t: playMs }));
+    } catch (e) {}
+  }, 250);
+}
+function savePrefs() { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} }
+
+/* =====================================================================
+   Farbe
+   ===================================================================== */
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function mix(rgb, to, t) { return rgb.map((v, i) => Math.round(v + (to[i] - v) * t)); }
+const css = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const WHITE = [255, 255, 255], BLACK = [20, 14, 30];
+function shades(hex) {
+  const b = hexRgb(hex);
+  const light = (b[0] + b[1] + b[2]) / 3 > 225; // weiße Steine brauchen kühlere Schatten
+  const dk = light ? [96, 112, 140] : BLACK;
+  return {
+    base: b,
+    l3: mix(b, WHITE, 0.62), l2: mix(b, WHITE, 0.4), l1: mix(b, WHITE, 0.2),
+    d1: mix(b, dk, light ? 0.16 : 0.14), d2: mix(b, dk, light ? 0.3 : 0.3), d3: mix(b, dk, light ? 0.48 : 0.5),
+    edge: mix(b, dk, light ? 0.6 : 0.62),
+  };
+}
+const SHADES = COLORS.map(c => shades(c.hex));
+
+/* =====================================================================
+   Stein-Grafik (vorgerendert als Sprites)
+   ===================================================================== */
+const PAD = 0.2;          // Rand im Sprite für den Schatten
+const VARIANTS = 5;       // leicht verdrehte Varianten wie bei echten Steinen
+const ROT = [-3.2, -1.4, 0, 1.6, 3.4].map(d => d * Math.PI / 180);
+
+function poly(ctx, pts, fill) {
+  ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.closePath(); ctx.fillStyle = fill; ctx.fill();
+}
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// Zeichnet einen eckigen Strassstein, zentriert auf (0,0), Zellgröße S.
+function paintDrill(ctx, S, sh, shadow = true) {
+  const h = S * 0.455, r = S * 0.085, t = h * 0.42;
+  if (shadow) {
+    ctx.save();
+    ctx.shadowColor = "rgba(45, 30, 15, 0.42)";
+    ctx.shadowBlur = S * 0.1; ctx.shadowOffsetX = S * 0.035; ctx.shadowOffsetY = S * 0.075;
+    rr(ctx, -h, -h, 2 * h, 2 * h, r); ctx.fillStyle = css(sh.d2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.save();
+  rr(ctx, -h, -h, 2 * h, 2 * h, r); ctx.clip();
+  // Grundfacetten (Krone)
+  poly(ctx, [-h, -h, h, -h, t, -t, -t, -t], css(sh.l2));       // oben
+  poly(ctx, [h, -h, h, h, t, t, t, -t], css(sh.d1));           // rechts
+  poly(ctx, [h, h, -h, h, -t, t, t, t], css(sh.d3));           // unten
+  poly(ctx, [-h, h, -h, -h, -t, -t, -t, t], css(sh.l1));       // links
+  // Sternfacetten – geben das Funkeln
+  poly(ctx, [0, -h, -t, -t, t, -t], css(sh.l3));
+  poly(ctx, [h, 0, t, -t, t, t], css(sh.base));
+  poly(ctx, [0, h, t, t, -t, t], css(sh.d2));
+  poly(ctx, [-h, 0, -t, t, -t, -t], css(sh.l2));
+  // Tafel
+  const g = ctx.createLinearGradient(-t, -t, t, t);
+  g.addColorStop(0, css(sh.l3)); g.addColorStop(0.55, css(sh.l1)); g.addColorStop(1, css(sh.base));
+  ctx.fillStyle = g; ctx.fillRect(-t, -t, 2 * t, 2 * t);
+  // Facettenkanten
+  ctx.lineWidth = Math.max(0.6, S * 0.014);
+  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  ctx.beginPath();
+  ctx.moveTo(-h, -h); ctx.lineTo(-t, -t); ctx.moveTo(h, -h); ctx.lineTo(t, -t);
+  ctx.moveTo(h, h); ctx.lineTo(t, t); ctx.moveTo(-h, h); ctx.lineTo(-t, t);
+  ctx.moveTo(0, -h); ctx.lineTo(-t, -t); ctx.moveTo(0, -h); ctx.lineTo(t, -t);
+  ctx.moveTo(-h, 0); ctx.lineTo(-t, -t); ctx.moveTo(-h, 0); ctx.lineTo(-t, t);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.12)";
+  ctx.beginPath();
+  ctx.moveTo(h, 0); ctx.lineTo(t, -t); ctx.moveTo(h, 0); ctx.lineTo(t, t);
+  ctx.moveTo(0, h); ctx.lineTo(-t, t); ctx.moveTo(0, h); ctx.lineTo(t, t);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.strokeRect(-t, -t, 2 * t, 2 * t);
+  // Glanzlicht
+  const hx = -t * 0.35, hy = -t * 0.45;
+  const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, t * 1.1);
+  rg.addColorStop(0, "rgba(255,255,255,0.85)"); rg.addColorStop(0.35, "rgba(255,255,255,0.25)"); rg.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = rg; ctx.fillRect(-h, -h, 2 * h, 2 * h);
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.beginPath(); ctx.ellipse(hx - t * 0.12, hy - t * 0.1, t * 0.22, t * 0.13, -0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // Kante
+  rr(ctx, -h, -h, 2 * h, 2 * h, r);
+  ctx.lineWidth = Math.max(0.7, S * 0.022); ctx.strokeStyle = css(sh.edge, 0.85); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-h + r, -h + S * 0.02); ctx.lineTo(h - r, -h + S * 0.02);
+  ctx.moveTo(-h + S * 0.02, -h + r); ctx.lineTo(-h + S * 0.02, h - r);
+  ctx.lineWidth = Math.max(0.5, S * 0.012); ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.stroke();
+}
+
+function makeDrillSprite(px, k, v) {
+  const size = Math.ceil(px * (1 + 2 * PAD));
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.translate(size / 2, size / 2); ctx.rotate(ROT[v]);
+  paintDrill(ctx, px, SHADES[k]);
+  return c;
+}
+function makeSymbolSprite(px, k, strong) {
+  const c = document.createElement("canvas"); c.width = c.height = Math.max(2, Math.ceil(px));
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = strong ? "#1d1826" : "#5a5464";
+  ctx.font = `${strong ? 900 : 700} ${Math.round(px * 0.5)}px -apple-system, "SF Pro Rounded", "Segoe UI", Roboto, Arial, sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(COLORS[k].sym, px / 2, px / 2 + px * 0.03);
+  return c;
+}
+
+const spriteCache = new Map();
+function spritesFor(cellPx) {
+  // Größe auf Stufen runden (aufwärts), damit beim Zoomen nicht ständig neu gerendert wird
+  const b = Math.pow(2, Math.ceil(Math.log2(Math.max(4, cellPx)) * 4) / 4);
+  const key = b.toFixed(2);
+  let s = spriteCache.get(key);
+  if (!s) {
+    s = {
+      px: b,
+      drill: COLORS.map((_, k) => Array.from({ length: VARIANTS }, (_, v) => makeDrillSprite(b, k, v))),
+      sym: COLORS.map((_, k) => makeSymbolSprite(b, k, false)),
+      symStrong: COLORS.map((_, k) => makeSymbolSprite(b, k, true)),
+    };
+    if (spriteCache.size > 10) spriteCache.delete(spriteCache.keys().next().value);
+    spriteCache.set(key, s);
+  }
+  return s;
+}
+
+// kleine, feste Unordnung pro Feld – Steine sitzen nie ganz exakt
+function hash(i) { let x = (i + 1) * 2654435761 >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x ^= x >>> 13; return x >>> 0; }
+const JIT = Array.from({ length: N }, (_, i) => {
+  const h = hash(i);
+  return { v: h % VARIANTS, dx: ((h >>> 8 & 255) / 255 - 0.5) * 0.06, dy: ((h >>> 16 & 255) / 255 - 0.5) * 0.06 };
+});
+
+/* =====================================================================
+   Ton – alles synthetisch mit WebAudio
+   ===================================================================== */
+const Sound = (() => {
+  let ac = null, master = null, noise = null;
+  function ensure() {
+    if (ac) { if (ac.state === "suspended") ac.resume(); return true; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    ac = new AC();
+    master = ac.createGain(); master.gain.value = 0.9;
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 4;
+    master.connect(comp); comp.connect(ac.destination);
+    noise = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return true;
+  }
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function burst(t, { f = 3000, q = 1.2, dur = 0.03, vol = 0.3, type = "bandpass" }) {
+    const src = ac.createBufferSource(); src.buffer = noise;
+    const flt = ac.createBiquadFilter(); flt.type = type; flt.frequency.value = f; flt.Q.value = q;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.0015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(flt); flt.connect(g); g.connect(master);
+    src.start(t, Math.random() * 0.4, dur + 0.02);
+  }
+  function tone(t, { f = 440, f2 = null, dur = 0.1, vol = 0.1, type = "sine", attack = 0.002 }) {
+    const o = ac.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  // sanfte Tonleiter, damit schnelles Legen "klingt" statt zu nerven
+  const SCALE = [0, 2, 4, 7, 9, 12, 14, 16];
+  let step = 0;
+  return {
+    unlock: ensure,
+    place() {
+      if (!prefs.sound || !ensure()) return;
+      const t = ac.currentTime + 0.005;
+      // knackiges "Klick" des Steins auf dem Kleber
+      burst(t, { f: rnd(2600, 3600), q: 1.4, dur: 0.028, vol: 0.55 });
+      burst(t + 0.004, { f: rnd(6500, 8000), q: 2.5, dur: 0.014, vol: 0.18 });
+      // weiches "Tock" – das Andrücken
+      tone(t, { f: rnd(210, 240), f2: 90, dur: 0.06, vol: 0.22 });
+      // gläsernes "Ting"
+      step = (step + 1 + (Math.random() < 0.35 ? 1 : 0)) % SCALE.length;
+      const f = 1760 * Math.pow(2, SCALE[step] / 12) * rnd(0.997, 1.003);
+      tone(t + 0.006, { f, dur: 0.22, vol: 0.035, type: "sine" });
+      tone(t + 0.006, { f: f * 2.76, dur: 0.09, vol: 0.012, type: "sine" });
+    },
+    wrong() {
+      if (!prefs.sound || !ensure()) return;
+      const t = ac.currentTime + 0.005;
+      tone(t, { f: 190, f2: 120, dur: 0.16, vol: 0.14, type: "triangle" });
+      burst(t, { f: 600, q: 0.8, dur: 0.05, vol: 0.12, type: "lowpass" });
+    },
+    pick() {
+      if (!prefs.sound || !ensure()) return;
+      // Rascheln von Steinen in der Schale
+      const t = ac.currentTime + 0.005;
+      const n = 6 + (Math.random() * 4 | 0);
+      for (let i = 0; i < n; i++) {
+        const dt = Math.pow(Math.random(), 1.6) * 0.14;
+        burst(t + dt, { f: rnd(3500, 7500), q: rnd(2, 5), dur: rnd(0.008, 0.02), vol: rnd(0.06, 0.18) });
+      }
+    },
+    chime() {
+      if (!prefs.sound || !ensure()) return;
+      const t = ac.currentTime + 0.01;
+      [0, 4, 7, 12].forEach((s, i) => tone(t + i * 0.08, { f: 880 * Math.pow(2, s / 12), dur: 0.6, vol: 0.06 }));
+    },
+    fanfare() {
+      if (!prefs.sound || !ensure()) return;
+      const t = ac.currentTime + 0.01;
+      [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => {
+        tone(t + i * 0.09, { f: 523.25 * Math.pow(2, s / 12), dur: 0.9, vol: 0.07, type: "triangle" });
+        tone(t + i * 0.09, { f: 1046.5 * Math.pow(2, s / 12), dur: 0.5, vol: 0.025 });
+      });
+      for (let i = 0; i < 24; i++) burst(t + 0.6 + Math.random() * 0.9, { f: rnd(5000, 9000), q: 6, dur: 0.02, vol: 0.06 });
+    },
+  };
+})();
+function buzz(ms) { if (prefs.vib && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
+
+/* =====================================================================
+   Darstellung
+   ===================================================================== */
+const board = document.getElementById("board");
+const baseC = document.getElementById("base"), fxC = document.getElementById("fx");
+const bctx = baseC.getContext("2d"), fctx = fxC.getContext("2d");
+let DPR = 1, VW = 0, VH = 0;
+const view = { s: 32, x: 0, y: 0 };
+const MAX_S = 72;
+const minS = () => Math.min((VW - 32) / W, (VH - 32) / H);
+const SYM_MIN = 13;   // darunter sieht man nur Punkte – das Bild bleibt geheim
+const MARGIN = 0.9;   // weißer Leinwandrand in Zellen
+
+let baseDirty = true;
+const anims = [];          // Fall-Animationen
+const animSet = new Set();
+const fx = [];             // Partikel, Wellen, Fehler, Glitzern
+let sweep = null;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 3);
+  VW = board.clientWidth; VH = board.clientHeight;
+  for (const c of [baseC, fxC]) { c.width = Math.round(VW * DPR); c.height = Math.round(VH * DPR); }
+  clampView(); baseDirty = true; kick();
+}
+
+function clampView() {
+  view.s = Math.max(minS(), Math.min(MAX_S, view.s));
+  const sw = W * view.s, sh = H * view.s, m = Math.min(80, VW * 0.2);
+  const fit = (pos, size, vp) => {
+    let lo = vp - size - m, hi = m;
+    if (lo > hi) [lo, hi] = [hi, lo];
+    return Math.max(lo, Math.min(hi, pos));
+  };
+  view.x = fit(view.x, sw, VW); view.y = fit(view.y, sh, VH);
+}
+
+function drawBase() {
+  const ctx = bctx, s = view.s;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, VW, VH);
+  const x0 = view.x, y0 = view.y, sw = W * s, sh = H * s, mg = MARGIN * s;
+  // Leinwand mit Rand
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = "#fbf8f1";
+  rr(ctx, x0 - mg, y0 - mg, sw + 2 * mg, sh + 2 * mg, Math.min(10, mg * 0.4)); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = "#f3eee2"; ctx.fillRect(x0, y0, sw, sh);
+
+  const c0 = Math.max(0, Math.floor(-x0 / s) - 1), c1 = Math.min(W - 1, Math.ceil((VW - x0) / s) + 1);
+  const r0 = Math.max(0, Math.floor(-y0 / s) - 1), r1 = Math.min(H - 1, Math.ceil((VH - y0) / s) + 1);
+  if (c0 > c1 || r0 > r1) return;
+
+  // Raster
+  if (s >= 8) {
+    ctx.strokeStyle = s >= SYM_MIN ? "rgba(120, 104, 80, 0.18)" : "rgba(120, 104, 80, 0.1)";
+    ctx.lineWidth = 1 / DPR;
+    ctx.beginPath();
+    for (let c = c0; c <= c1 + 1; c++) { const x = Math.round((x0 + c * s) * DPR) / DPR; ctx.moveTo(x, y0 + r0 * s); ctx.lineTo(x, y0 + (r1 + 1) * s); }
+    for (let r = r0; r <= r1 + 1; r++) { const y = Math.round((y0 + r * s) * DPR) / DPR; ctx.moveTo(x0 + c0 * s, y); ctx.lineTo(x0 + (c1 + 1) * s, y); }
+    ctx.stroke();
+  }
+
+  const sp = spritesFor(s * DPR);
+  const ds = s * (1 + 2 * PAD), off = s * PAD;
+  const showSym = s >= SYM_MIN;
+  const hint = prefs.hint && selected >= 0;
+  // erst leere Felder, dann Steine (damit Schatten über Nachbarn fallen)
+  if (showSym) {
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const i = r * W + c;
+      if (placed[i] && !animSet.has(i)) continue;
+      const k = TARGET[i];
+      if (hint) {
+        ctx.globalAlpha = k === selected ? 1 : 0.38;
+        ctx.drawImage(k === selected ? sp.symStrong[k] : sp.sym[k], x0 + c * s, y0 + r * s, s, s);
+      } else ctx.drawImage(sp.sym[k], x0 + c * s, y0 + r * s, s, s);
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = "rgba(90, 80, 100, 0.35)";
+    const d = Math.max(1, s * 0.16);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const i = r * W + c;
+      if (placed[i] && !animSet.has(i)) continue;
+      ctx.fillRect(x0 + c * s + s / 2 - d / 2, y0 + r * s + s / 2 - d / 2, d, d);
+    }
+  }
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const i = r * W + c;
+    if (!placed[i] || animSet.has(i)) continue;
+    const j = JIT[i];
+    ctx.drawImage(sp.drill[TARGET[i]][j.v], x0 + (c + j.dx) * s - off, y0 + (r + j.dy) * s - off, ds, ds);
+  }
+}
+
+/* ---------- Effekte ---------- */
+const easeOutBack = p => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+
+function star(ctx, x, y, r, a, rot = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = a;
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+  g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.25, "rgba(255,255,255,0.6)"); g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  const w = r * 0.13;
+  ctx.moveTo(0, -r); ctx.quadraticCurveTo(w, -w, r, 0); ctx.quadraticCurveTo(w, w, 0, r);
+  ctx.quadraticCurveTo(-w, w, -r, 0); ctx.quadraticCurveTo(-w, -w, 0, -r); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+let nextGlint = 0;
+function spawnGlint(now) {
+  if (now < nextGlint || placedCount === 0) return;
+  nextGlint = now + 120 + Math.random() * (view.s < SYM_MIN ? 160 : 380);
+  const s = view.s;
+  const c0 = Math.max(0, Math.floor(-view.x / s)), c1 = Math.min(W - 1, Math.floor((VW - view.x) / s));
+  const r0 = Math.max(0, Math.floor(-view.y / s)), r1 = Math.min(H - 1, Math.floor((VH - view.y) / s));
+  if (c0 > c1 || r0 > r1) return;
+  for (let tries = 0; tries < 12; tries++) {
+    const c = c0 + (Math.random() * (c1 - c0 + 1) | 0), r = r0 + (Math.random() * (r1 - r0 + 1) | 0);
+    const i = r * W + c;
+    if (placed[i] && !animSet.has(i)) {
+      fx.push({ type: "glint", i, t0: now, dur: 650 + Math.random() * 400, rot: Math.random() * 0.6 - 0.3,
+        ox: -0.18 + Math.random() * 0.12, oy: -0.2 + Math.random() * 0.12, size: 0.5 + Math.random() * 0.35 });
+      return;
+    }
+  }
+}
+
+function drawFx(now) {
+  const ctx = fctx, s = view.s;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, VW, VH);
+  const cx = i => view.x + (i % W + 0.5) * s, cy = i => view.y + ((i / W | 0) + 0.5) * s;
+
+  // fallende Steine
+  const sp = spritesFor(s * DPR * 1.3);
+  for (let n = anims.length - 1; n >= 0; n--) {
+    const a = anims[n], p = Math.min(1, (now - a.t0) / a.dur);
+    const j = JIT[a.i];
+    const sc = 1.55 - 0.55 * easeOutBack(p);
+    const ds = s * (1 + 2 * PAD) * sc;
+    const x = view.x + (a.i % W + 0.5 + j.dx * p) * s, y = view.y + ((a.i / W | 0) + 0.5 + j.dy * p) * s - (1 - easeOut(p)) * s * 0.25;
+    ctx.globalAlpha = Math.min(1, p * 4);
+    ctx.drawImage(sp.drill[TARGET[a.i]][j.v], x - ds / 2, y - ds / 2, ds, ds);
+    ctx.globalAlpha = 1;
+    if (p >= 1) { anims.splice(n, 1); animSet.delete(a.i); baseDirty = true; landed(a.i, now); }
+  }
+
+  for (let n = fx.length - 1; n >= 0; n--) {
+    const e = fx[n], p = (now - e.t0) / e.dur;
+    if (p >= 1) { fx.splice(n, 1); continue; }
+    if (p < 0) continue;
+    if (e.type === "ring") {
+      const sh = SHADES[e.k];
+      ctx.strokeStyle = css(mix(sh.base, WHITE, 0.5), 0.55 * (1 - p));
+      ctx.lineWidth = Math.max(1, s * 0.06 * (1 - p));
+      ctx.beginPath(); ctx.arc(cx(e.i), cy(e.i), s * (0.5 + p * 0.75), 0, Math.PI * 2); ctx.stroke();
+    } else if (e.type === "spark") {
+      const q = easeOut(p);
+      star(ctx, cx(e.i) + Math.cos(e.a) * s * (0.35 + q * e.d), cy(e.i) + Math.sin(e.a) * s * (0.35 + q * e.d),
+        s * 0.22 * (1 - p * 0.6), 1 - p, e.a);
+    } else if (e.type === "glint") {
+      if (placed[e.i]) {
+        const a = Math.sin(p * Math.PI);
+        star(ctx, cx(e.i) + e.ox * s, cy(e.i) + e.oy * s, s * e.size * (0.4 + 0.6 * a), a * 0.95, e.rot + p * 0.5);
+      }
+    } else if (e.type === "wrong") {
+      const sh = Math.sin(p * Math.PI * 7) * (1 - p) * s * 0.08;
+      const x = view.x + (e.i % W) * s + sh, y = view.y + (e.i / W | 0) * s;
+      ctx.strokeStyle = `rgba(226, 70, 80, ${0.9 * (1 - p)})`;
+      ctx.fillStyle = `rgba(226, 70, 80, ${0.16 * (1 - p)})`;
+      ctx.lineWidth = Math.max(1.5, s * 0.07);
+      rr(ctx, x + s * 0.06, y + s * 0.06, s * 0.88, s * 0.88, s * 0.15); ctx.fill(); ctx.stroke();
+    } else if (e.type === "zone") {
+      // kurzes Aufleuchten aller Steine einer fertigen Farbe
+      const a = Math.sin(p * Math.PI) * 0.55;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.globalCompositeOperation = "lighter";
+      const d = s * 0.7;
+      for (const i of e.cells) {
+        const x = cx(i), y = cy(i);
+        if (x < -s || y < -s || x > VW + s || y > VH + s) continue;
+        ctx.fillRect(x - d / 2, y - d / 2, d, d);
+      }
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+
+  if (sweep) {
+    const p = (now - sweep.t0) / sweep.dur;
+    if (p >= 1) sweep = null;
+    else {
+      const sw = W * s, sh = H * s, L = sw + sh;
+      const pos = -0.3 * L + p * 1.6 * L;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(view.x, view.y, sw, sh); ctx.clip();
+      const g = ctx.createLinearGradient(pos - L * 0.12, 0, pos + L * 0.12, L * 0.0);
+      g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.5, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.setTransform(DPR, 0, 0, DPR, view.x * DPR, view.y * DPR);
+      ctx.transform(1, 0, -0.6, 1, 0, 0);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = g; ctx.fillRect(-sh, 0, sw + 2 * sh, sh);
+      ctx.restore();
+    }
+  }
+}
+
+function landed(i, now) {
+  const k = TARGET[i];
+  fx.push({ type: "ring", i, k, t0: now, dur: 380 });
+  const n = 4 + (Math.random() * 3 | 0);
+  for (let m = 0; m < n; m++) fx.push({ type: "spark", i, t0: now + m * 12, dur: 380 + Math.random() * 200, a: Math.random() * Math.PI * 2, d: 0.35 + Math.random() * 0.45 });
+}
+
+/* ---------- Schleife ---------- */
+let raf = 0, viewAnim = null;
+function kick() { if (!raf) raf = requestAnimationFrame(frame); }
+function frame(now) {
+  raf = 0;
+  if (viewAnim) {
+    const p = Math.min(1, (now - viewAnim.t0) / viewAnim.dur), q = easeOut(p);
+    view.s = viewAnim.from.s + (viewAnim.to.s - viewAnim.from.s) * q;
+    view.x = viewAnim.from.x + (viewAnim.to.x - viewAnim.from.x) * q;
+    view.y = viewAnim.from.y + (viewAnim.to.y - viewAnim.from.y) * q;
+    if (p >= 1) { viewAnim = null; clampView(); }
+    baseDirty = true;
+  }
+  if (!document.hidden) spawnGlint(now);
+  if (baseDirty) { baseDirty = false; drawBase(); }
+  drawFx(now);
+  if (viewAnim || anims.length || fx.length || sweep || (placedCount > 0 && !document.hidden)) kick();
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
+
+function animateTo(s, wx, wy, sx = VW / 2, sy = VH / 2, dur = 320) {
+  // zoomt so, dass Weltpunkt (wx,wy) [in Zellen] auf Bildschirmpunkt (sx,sy) liegt
+  const from = { ...view };
+  const save = { ...view };
+  view.s = s; view.x = sx - wx * s; view.y = sy - wy * s; clampView();
+  const to = { ...view };
+  Object.assign(view, save);
+  viewAnim = { from, to, t0: performance.now(), dur };
+  kick();
+}
+function zoomBy(f, sx = VW / 2, sy = VH / 2) {
+  const s = Math.max(minS(), Math.min(MAX_S, (viewAnim ? viewAnim.to.s : view.s) * f));
+  animateTo(s, (sx - view.x) / view.s, (sy - view.y) / view.s, sx, sy, 220);
+}
+function fitAll(dur = 420) { animateTo(minS(), W / 2, H / 2, VW / 2, VH / 2, dur); }
+
+/* =====================================================================
+   Spiel
+   ===================================================================== */
+const tray = document.getElementById("tray");
+const wells = [];
+function buildTray() {
+  const sp = document.createElement("canvas");
+  const px = 64; sp.width = sp.height = Math.ceil(px * 1.4);
+  COLORS.forEach((col, k) => {
+    const ctx = sp.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, sp.width, sp.height);
+    // kleines Häufchen Steine
+    const pile = [[-0.2, 0.12, -0.25], [0.22, 0.14, 0.3], [0, -0.12, 0.05]];
+    for (const [dx, dy, rot] of pile) {
+      ctx.setTransform(1, 0, 0, 1, sp.width / 2 + dx * px, sp.height / 2 + dy * px);
+      ctx.rotate(rot); ctx.scale(0.62, 0.62);
+      paintDrill(ctx, px, SHADES[k]);
+    }
+    const b = document.createElement("button");
+    b.className = "well";
+    b.setAttribute("aria-label", `${col.name}, Symbol ${col.sym}`);
+    b.innerHTML = `<img alt="" src="${sp.toDataURL()}"><span class="sym">${col.sym}</span><span class="left"></span>`;
+    b.addEventListener("click", () => select(k));
+    tray.appendChild(b);
+    wells.push(b);
+  });
+}
+function updateTray() {
+  wells.forEach((b, k) => {
+    b.classList.toggle("sel", k === selected);
+    b.classList.toggle("done", left[k] === 0);
+    b.querySelector(".left").textContent = left[k] === 0 ? "fertig ✓" : left[k].toLocaleString("de-DE");
+  });
+  document.getElementById("bar").style.width = (placedCount / N * 100).toFixed(2) + "%";
+  document.getElementById("sub").textContent = placedCount === N
+    ? MOTIF.name
+    : `Motiv Nr. 1 · ${placedCount.toLocaleString("de-DE")} von ${N.toLocaleString("de-DE")} Steinen`;
+}
+function select(k) {
+  Sound.unlock();
+  if (left[k] === 0) { toast(`${COLORS[k].name} ist schon komplett`); return; }
+  selected = selected === k ? -1 : k;
+  if (selected >= 0) Sound.pick();
+  if (prefs.hint) baseDirty = true;
+  updateTray(); kick();
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+function tapCell(px, py) {
+  Sound.unlock();
+  const c = Math.floor((px - view.x) / view.s), r = Math.floor((py - view.y) / view.s);
+  if (view.s < SYM_MIN) {
+    // zu klein zum Lesen – erst heranzoomen
+    animateTo(36, (px - view.x) / view.s, (py - view.y) / view.s, px, py, 380);
+    return;
+  }
+  if (c < 0 || r < 0 || c >= W || r >= H) return;
+  const i = r * W + c;
+  if (placed[i]) return;
+  if (selected < 0) {
+    toast("Wähle zuerst unten eine Farbe");
+    wells.forEach(w => { w.classList.remove("nudge"); void w.offsetWidth; w.classList.add("nudge"); });
+    return;
+  }
+  const now = performance.now();
+  if (TARGET[i] !== selected) {
+    errors++; save();
+    fx.push({ type: "wrong", i, t0: now, dur: 420 });
+    Sound.wrong(); buzz([12, 40, 12]);
+    kick();
+    return;
+  }
+  // Treffer
+  if (lastAct && now - lastAct < 60000) playMs += now - lastAct;
+  lastAct = now;
+  placed[i] = 1; placedCount++; left[selected]--;
+  anims.push({ i, t0: now, dur: 210 }); animSet.add(i);
+  baseDirty = true;
+  Sound.place(); buzz(8);
+  const k = selected;
+  if (left[k] === 0) {
+    setTimeout(() => {
+      Sound.chime();
+      toast(`${COLORS[k].name} komplett ✨`);
+      const cells = []; for (let j = 0; j < N; j++) if (TARGET[j] === k) cells.push(j);
+      fx.push({ type: "zone", cells, t0: performance.now(), dur: 700 });
+      kick();
+    }, 230);
+    const nextK = left.findIndex(v => v > 0);
+    selected = -1;
+    if (nextK < 0) setTimeout(finish, 600);
+  }
+  updateTray(); save(); kick();
+}
+
+function fmtTime(ms) {
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), sec = Math.floor(ms / 1000) % 60;
+  return h ? `${h}:${String(m % 60).padStart(2, "0")} h` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+function finish() {
+  fitAll(900);
+  setTimeout(() => {
+    sweep = { t0: performance.now(), dur: 1800 };
+    Sound.fanfare(); buzz([20, 60, 20, 60, 40]);
+    kick();
+  }, 700);
+  setTimeout(() => {
+    document.getElementById("doneText").textContent = `Dein Motiv: ${MOTIF.name}.`;
+    document.getElementById("stStones").textContent = N.toLocaleString("de-DE");
+    document.getElementById("stTime").textContent = fmtTime(playMs);
+    document.getElementById("stErr").textContent = errors;
+    document.getElementById("done").classList.add("open");
+  }, 2600);
+}
+
+function reset() {
+  placed.fill(0); placedCount = 0; errors = 0; playMs = 0; lastAct = 0; selected = -1;
+  totals.forEach((v, k) => left[k] = v);
+  anims.length = 0; animSet.clear(); fx.length = 0; sweep = null;
+  try { localStorage.removeItem(STORE); } catch (e) {}
+  updateTray(); startView(); baseDirty = true; kick();
+}
+
+/* =====================================================================
+   Gesten: 1 Finger tippen = setzen, ziehen = verschieben, 2 Finger = zoomen
+   ===================================================================== */
+const pointers = new Map();
+let gesture = null;
+function local(e) { const r = board.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+board.addEventListener("pointerdown", e => {
+  if (e.target.closest(".zoombar")) return;
+  board.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, local(e));
+  viewAnim = null;
+  if (pointers.size === 1) {
+    const p = local(e);
+    gesture = { type: "maybeTap", sx: p.x, sy: p.y, vx: view.x, vy: view.y, t: performance.now() };
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    gesture = { type: "pinch", d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: view.s,
+      wx: (mx - view.x) / view.s, wy: (my - view.y) / view.s };
+  }
+});
+board.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, local(e));
+  if (!gesture) return;
+  if (gesture.type === "pinch" && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    view.s = Math.max(minS(), Math.min(MAX_S, gesture.s0 * d / gesture.d0));
+    view.x = mx - gesture.wx * view.s; view.y = my - gesture.wy * view.s;
+    clampView(); baseDirty = true; kick();
+  } else if (gesture.type === "maybeTap" || gesture.type === "pan") {
+    const p = local(e);
+    const dx = p.x - gesture.sx, dy = p.y - gesture.sy;
+    if (gesture.type === "maybeTap" && Math.hypot(dx, dy) > 9) gesture.type = "pan";
+    if (gesture.type === "pan") {
+      view.x = gesture.vx + dx; view.y = gesture.vy + dy;
+      clampView(); baseDirty = true; kick();
+    }
+  }
+});
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  const p = pointers.get(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (gesture && gesture.type === "maybeTap" && pointers.size === 0 && e.type === "pointerup") tapCell(p.x, p.y);
+  if (pointers.size === 1 && gesture && gesture.type === "pinch") {
+    // nach dem Zoomen nahtlos mit einem Finger weiter verschieben
+    const q = [...pointers.values()][0];
+    gesture = { type: "pan", sx: q.x, sy: q.y, vx: view.x, vy: view.y };
+  } else if (pointers.size === 0) gesture = null;
+}
+board.addEventListener("pointerup", endPointer);
+board.addEventListener("pointercancel", endPointer);
+board.addEventListener("wheel", e => {
+  e.preventDefault();
+  const p = local(e);
+  const mouseWheel = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 50);
+  if (e.ctrlKey || mouseWheel) {
+    // Mausrad oder Trackpad-Pinch → zoomen
+    const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0018));
+    const s = Math.max(minS(), Math.min(MAX_S, view.s * f));
+    const wx = (p.x - view.x) / view.s, wy = (p.y - view.y) / view.s;
+    view.s = s; view.x = p.x - wx * s; view.y = p.y - wy * s;
+  } else {
+    // Trackpad mit zwei Fingern → verschieben
+    view.x -= e.deltaX; view.y -= e.deltaY;
+  }
+  viewAnim = null; clampView(); baseDirty = true; kick();
+}, { passive: false });
+// iOS: Safari-eigenes Zoomen unterbinden
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("dblclick", e => e.preventDefault());
+
+window.addEventListener("keydown", e => {
+  if (e.key >= "1" && e.key <= String(COLORS.length)) select(+e.key - 1);
+  const k = e.key.toUpperCase(), idx = COLORS.findIndex(c => c.sym === k);
+  if (idx >= 0 && !e.metaKey && !e.ctrlKey) select(idx);
+  if (e.key === "+" || e.key === "=") zoomBy(1.35);
+  if (e.key === "-") zoomBy(1 / 1.35);
+  if (e.key === "0") fitAll();
+  if (e.key === "Escape") { selected = -1; updateTray(); if (prefs.hint) { baseDirty = true; kick(); } }
+});
+
+document.getElementById("zIn").onclick = () => zoomBy(1.4);
+document.getElementById("zOut").onclick = () => zoomBy(1 / 1.4);
+document.getElementById("zFit").onclick = () => {
+  if (view.s > minS() * 1.05) fitAll(); else animateTo(36, W / 2, H / 2);
+};
+
+/* =====================================================================
+   Menü
+   ===================================================================== */
+const SPK_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>';
+const SPK_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
+function syncPrefs() {
+  document.getElementById("btnSound").innerHTML = prefs.sound ? SPK_ON : SPK_OFF;
+  document.getElementById("swSound").classList.toggle("on", prefs.sound);
+  document.getElementById("swVib").classList.toggle("on", prefs.vib);
+  document.getElementById("swHint").classList.toggle("on", prefs.hint);
+}
+function togglePref(name) { prefs[name] = !prefs[name]; savePrefs(); syncPrefs(); baseDirty = true; kick(); if (name === "sound" && prefs.sound) { Sound.unlock(); Sound.place(); } }
+document.getElementById("btnSound").onclick = () => togglePref("sound");
+document.getElementById("swSound").onclick = () => togglePref("sound");
+document.getElementById("swVib").onclick = () => togglePref("vib");
+document.getElementById("swHint").onclick = () => togglePref("hint");
+const menu = document.getElementById("menu"), done = document.getElementById("done");
+document.getElementById("btnMenu").onclick = () => menu.classList.add("open");
+document.getElementById("btnClose").onclick = () => menu.classList.remove("open");
+menu.addEventListener("click", e => { if (e.target === menu) menu.classList.remove("open"); });
+document.getElementById("btnReset").onclick = () => {
+  if (confirm("Alle gesetzten Steine entfernen und von vorn beginnen?")) { reset(); menu.classList.remove("open"); }
+};
+document.getElementById("btnView").onclick = () => { done.classList.remove("open"); sweep = { t0: performance.now(), dur: 1800 }; kick(); };
+document.getElementById("btnAgain").onclick = () => { done.classList.remove("open"); reset(); };
+done.addEventListener("click", e => { if (e.target === done) done.classList.remove("open"); });
+
+/* =====================================================================
+   Start
+   ===================================================================== */
+function startView() {
+  // wie beim echten Bild: oben links anfangen
+  view.s = Math.min(MAX_S, Math.max(30, Math.min(40, VW / 11)));
+  view.x = MARGIN * view.s + 14; view.y = MARGIN * view.s + 14;
+  clampView();
+}
+load();
+buildTray();
+syncPrefs();
+VW = board.clientWidth; VH = board.clientHeight;
+startView();
+resize();
+updateTray();
+if (placedCount === N) { fitAll(0); }
+window.addEventListener("resize", resize);
+if (placedCount === 0) setTimeout(() => toast("Farbe wählen, dann aufs passende Feld tippen"), 500);
+
+// Für Tests
+window.__funkel = { MOTIF, placed, view, solveAllBut(n = 0) {
+  let skip = n;
+  for (let i = N - 1; i >= 0; i--) { if (placed[i]) continue; if (skip > 0) { skip--; continue; } placed[i] = 1; placedCount++; left[TARGET[i]]--; }
+  updateTray(); baseDirty = true; kick(); save();
+}, tapCell };
+</script>
+</body>
+</html>
