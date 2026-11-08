@@ -284,50 +284,80 @@
     }
   }
 
-  // Juwelglas: leuchtender Kern, gewölbter Glanz, Lichtsaum unten, Funkelpunkt, farbiger Schein
+  // Edelstein-Schliff: leuchtende Tafel, zwölf Facetten, Schliffkanten, Feuer, farbiger Schein
   function paintGlass(c, S, P, base, v) {
-    const X = f => P + S * f;
+    const X = f => P + S * f, R = srng(v * 131 + Math.round(base[0] * 3 + base[1] * 5 + base[2] * 7));
     // farbiger Lichtschein auf dem Mörtel und kurzer Kontaktschatten
     c.save();
     c.shadowColor = rgba(lift(base, 0.35), 0.8); c.shadowBlur = S * 0.2; c.shadowOffsetY = S * 0.02;
-    stonePath(c, v, P, P, S, 0, 0.18); c.fillStyle = rgba(base, 1); c.fill();
+    stonePath(c, v, P, P, S, 0, 0.16); c.fillStyle = rgba(base, 1); c.fill();
     c.shadowColor = "rgba(0,0,0,.55)"; c.shadowBlur = S * 0.035; c.shadowOffsetY = S * 0.03;
     c.fill();
     c.restore();
 
-    c.save(); stonePath(c, v, P, P, S, 0, 0.18); c.clip();
-    // Körper: Kern leuchtet, Rand satt und tief
-    const core = c.createRadialGradient(X(0.5), X(0.62), S * 0.04, X(0.5), X(0.55), S * 0.78);
-    core.addColorStop(0, rgba(lift(base, 0.55), 1));
-    core.addColorStop(0.38, rgba(lift(base, 0.18), 1));
-    core.addColorStop(0.75, rgba(base, 1));
-    core.addColorStop(1, rgba(deep(base, 0.5), 1));
-    c.fillStyle = core; c.fillRect(P, P, S, S);
-    // gebündeltes Licht an der Unterkante
-    const caus = c.createRadialGradient(X(0.5), X(0.98), 0, X(0.5), X(0.98), S * 0.42);
-    caus.addColorStop(0, rgba(lift(base, 0.8), 0.8)); caus.addColorStop(1, rgba(lift(base, 0.8), 0));
-    c.fillStyle = caus; c.fillRect(P, P, S, S);
-    // gewölbter Glanz über der oberen Hälfte
-    rr(c, X(0.09), X(0.06), S * 0.82, S * 0.42, S * 0.2);
-    const gl = c.createLinearGradient(0, X(0.06), 0, X(0.48));
-    gl.addColorStop(0, "rgba(255,255,255,.5)"); gl.addColorStop(0.5, "rgba(255,255,255,.14)"); gl.addColorStop(1, "rgba(255,255,255,.02)");
-    c.fillStyle = gl; c.fill();
-    // Saum: oben hell, unten in der Eigenfarbe leuchtend
+    c.save(); stonePath(c, v, P, P, S, 0, 0.16); c.clip();
+    const t = 0.27;                         // Tafel-Einzug
+    const O = [[X(0), X(0)], [X(1), X(0)], [X(1), X(1)], [X(0), X(1)]];
+    const T = [[X(t), X(t)], [X(1 - t), X(t)], [X(1 - t), X(1 - t)], [X(t), X(1 - t)]];
+    const M = [[X(0.5), X(0)], [X(1), X(0.5)], [X(0.5), X(1)], [X(0), X(0.5)]];
+    const L = [-0.55, -0.83];               // Licht von oben links
+    const tone = (pts, bias) => {
+      let cx = 0, cy = 0; pts.forEach(([x, y]) => { cx += x; cy += y; }); cx = cx / pts.length - X(0.5); cy = cy / pts.length - X(0.5);
+      const n = Math.hypot(cx, cy) || 1;
+      let b = (cx / n) * L[0] + (cy / n) * L[1];
+      b = clamp(b * 0.85 + bias + (R() - 0.5) * 0.18, -1, 1);
+      return b >= 0 ? rgba(lift(base, 0.12 + 0.62 * b), 1) : rgba(deep(base, -0.55 * b), 1);
+    };
+    const facet = (pts, bias) => {
+      c.beginPath(); pts.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+      c.fillStyle = tone(pts, bias); c.fill();
+    };
+    const edges = [];
+    for (let k = 0; k < 4; k++) {
+      const o0 = O[k], o1 = O[(k + 1) % 4], t0 = T[k], t1 = T[(k + 1) % 4], m = M[k];
+      facet([o0, m, t0], 0.12);
+      facet([m, o1, t1], -0.12);
+      facet([m, t1, t0], 0.28);
+      edges.push([o0, t0], [m, t0], [m, t1]);
+    }
+    // Tafel: leuchtet von innen
+    c.beginPath(); T.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
+    const tg = c.createRadialGradient(X(0.5), X(0.58), 0, X(0.5), X(0.5), S * 0.36);
+    tg.addColorStop(0, rgba(lift(base, 0.6), 1)); tg.addColorStop(0.6, rgba(lift(base, 0.22), 1)); tg.addColorStop(1, rgba(base, 1));
+    c.fillStyle = tg; c.fill();
+    // Spiegelung quer über die Tafel
+    c.save(); c.clip();
+    const gl = c.createLinearGradient(T[0][0], T[0][1], T[2][0], T[2][1]);
+    gl.addColorStop(0, "rgba(255,255,255,.42)"); gl.addColorStop(0.42, "rgba(255,255,255,.1)"); gl.addColorStop(0.43, "rgba(255,255,255,0)");
+    c.fillStyle = gl; c.fillRect(P, P, S, S);
+    c.restore();
+    // Schliffkanten
+    c.lineWidth = Math.max(0.8, S * 0.011); c.strokeStyle = "rgba(255,255,255,.28)";
+    c.beginPath(); edges.forEach(([a, b]) => { c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); }); c.stroke();
+    c.lineWidth = Math.max(1, S * 0.016); c.strokeStyle = "rgba(255,255,255,.45)";
+    c.beginPath(); T.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.stroke();
+    // Lichtsaum: oben hell, unten in der Eigenfarbe
     const rim = c.createLinearGradient(0, P, 0, P + S);
-    rim.addColorStop(0, "rgba(255,255,255,.7)"); rim.addColorStop(0.45, "rgba(255,255,255,.08)");
-    rim.addColorStop(0.75, rgba(lift(base, 0.5), 0.15)); rim.addColorStop(1, rgba(lift(base, 0.85), 0.8));
-    c.lineWidth = Math.max(1.2, S * 0.045); c.strokeStyle = rim;
-    stonePath(c, v, P, P, S, S * 0.025, 0.16); c.stroke();
+    rim.addColorStop(0, "rgba(255,255,255,.75)"); rim.addColorStop(0.4, "rgba(255,255,255,.05)");
+    rim.addColorStop(0.8, rgba(lift(base, 0.6), 0.1)); rim.addColorStop(1, rgba(lift(base, 0.85), 0.7));
+    c.lineWidth = Math.max(1.2, S * 0.04); c.strokeStyle = rim;
+    stonePath(c, v, P, P, S, S * 0.02, 0.15); c.stroke();
     c.restore();
-    // Funkelpunkt
-    c.save(); c.translate(X(0.24), X(0.17)); c.rotate(-0.5);
-    const sp = c.createRadialGradient(0, 0, 0, 0, 0, S * 0.09);
-    sp.addColorStop(0, "rgba(255,255,255,.95)"); sp.addColorStop(0.35, "rgba(255,255,255,.5)"); sp.addColorStop(1, "rgba(255,255,255,0)");
-    c.scale(1, 0.55); c.fillStyle = sp; c.beginPath(); c.arc(0, 0, S * 0.09, 0, 7); c.fill();
-    c.restore();
+    // Feuer: kleine Lichtsterne mit einem Hauch Spektralfarbe
+    const star = (x, y, r, tint) => {
+      c.save(); c.translate(x, y);
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, r);
+      g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.25, tint); g.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = g;
+      c.beginPath(); c.moveTo(0, -r); c.quadraticCurveTo(0, 0, r, 0); c.quadraticCurveTo(0, 0, 0, r); c.quadraticCurveTo(0, 0, -r, 0); c.quadraticCurveTo(0, 0, 0, -r); c.fill();
+      c.beginPath(); c.arc(0, 0, r * 0.22, 0, 7); c.fillStyle = "rgba(255,255,255,.95)"; c.fill();
+      c.restore();
+    };
+    star(T[0][0] + S * 0.01, T[0][1] + S * 0.01, S * 0.13, "rgba(200,240,255,.7)");
+    if (R() < 0.6) { const k = Math.floor(R() * 4); star(M[k][0] * 0.6 + T[(k + 1) % 4][0] * 0.4, M[k][1] * 0.6 + T[(k + 1) % 4][1] * 0.4, S * 0.07, R() < 0.5 ? "rgba(255,200,235,.6)" : "rgba(255,240,190,.6)"); }
     // feine Kontur
-    c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.65), 0.55);
-    stonePath(c, v, P, P, S, 0, 0.18); c.stroke();
+    c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.65), 0.6);
+    stonePath(c, v, P, P, S, 0, 0.16); c.stroke();
   }
 
   // Mörtelbett als Muster für das Brett
