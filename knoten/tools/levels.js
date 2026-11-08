@@ -6,10 +6,10 @@ const out = path.join(__dirname, "..", "src", "levels.js");
 
 if (process.argv[2] === "--worker") {
   const { generate } = require("./gen.js");
-  const target = (L) => ({ curl: Math.min(7, 0.4 + L * 0.14), wraps: L < 15 ? 1 : L < 30 ? 2 : 3, free: 1 });
+  const target = (L) => ({ curl: Math.min(7, 0.4 + L * 0.14), wraps: L < 15 ? 1 : L < 30 ? 2 : 3, free: 0 });
   process.on("message", (L) => {
     let best = null; const t0 = Date.now(), T = target(L);
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < 20; k++) {
       const g = generate(L, k);
       if (!g || !g.solvedBack) continue;
       const ok = g.curl >= T.curl && g.wraps >= T.wraps && g.freeRopes <= T.free;

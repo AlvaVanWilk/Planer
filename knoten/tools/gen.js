@@ -79,43 +79,56 @@ function generate(level, seedBump = 0) {
   const freeHoles = () => { const occ = new Set(); w.ropes.forEach((R) => { occ.add(R.e[0]); occ.add(R.e[1]); }); return range(cells).filter((h) => !occ.has(h)); };
   const endPos = (r, e) => P[w.ropes[r].e[e]];
   const doMove = (m) => { move(w, m.r, m.e, m.h, m.via); hist.push(m); };
-  for (let k = 0; k < S; k++) {
-    const free = freeHoles(), cr = Rope.crossings(w);
-    // Einhaken: A liegt unter B → A's Ende spitz um B's nächste Öse herum zurückführen
-    const unders = cr.filter((x) => x.top >= 0);
-    let done = false;
-    if (unders.length && (k % 3 !== 0 || rng() < 0.3)) {
-      for (let t = 0; t < 12 && !done; t++) {
-        const x = unders[ri(unders.length)], B = x.top, A = x.a === B ? x.b : x.a;
-        const ib = x.a === B ? x.ia : x.ib, eB = ib < (Rope.N - 1) / 2 ? 0 : 1, Q = endPos(B, eB);
-        // welches Ende von A bewegen? das, das näher an der Kreuzung liegt
-        const ia = x.a === A ? x.ia : x.ib, eA = ia < (Rope.N - 1) / 2 ? 0 : 1, F = endPos(A, 1 - eA), S0 = endPos(A, eA);
-        let best = null, bs = -Infinity;
-        for (const h of free) {
-          const D = P[h], dQ = dist(D, Q), dF = dist(D, F);
-          if (dQ < 0.9 || dQ > 2.6 || dF < 0.99 || dF > 3.4) continue;
-          const ang = Math.acos(Math.max(-1, Math.min(1, ((F.x - Q.x) * (D.x - Q.x) + (F.y - Q.y) * (D.y - Q.y)) / (dist(F, Q) * dQ || 1))));
-          const sc = -ang + rng() * 0.4;                    // spitzer Haken = besser
-          if (ang < 1.9 && sc > bs) { bs = sc; best = h; }
-        }
-        if (best == null) continue;
-        const turns = rng() < 0.3 ? 1.5 : 0.75;
-        doMove({ r: A, e: eA, h: best, from: w.ropes[A].e[eA], via: arcAround(Q, S0, P[best], turns, rng() < 0.5 ? 1 : -1, cols, rows), kind: "hook" });
-        done = true;
+  const tangledSet = (cr) => { const t = new Set(); cr.forEach((x) => { t.add(x.a); t.add(x.b); }); return t; };
+  // Einhaken: A liegt unter B → A's Ende spitz um B's nächste Öse herum zurückführen
+  function tryHook(cands) {
+    const free = freeHoles();
+    for (let t = 0; t < 12 && cands.length; t++) {
+      const x = cands[ri(cands.length)], B = x.top, A = x.a === B ? x.b : x.a;
+      const ib = x.a === B ? x.ia : x.ib, eB = ib < (Rope.N - 1) / 2 ? 0 : 1, Q = endPos(B, eB);
+      const ia = x.a === A ? x.ia : x.ib, eA = ia < (Rope.N - 1) / 2 ? 0 : 1, F = endPos(A, 1 - eA), S0 = endPos(A, eA);
+      let best = null, bs = -Infinity;
+      for (const h of free) {
+        const D = P[h], dQ = dist(D, Q), dF = dist(D, F);
+        if (dQ < 0.9 || dQ > 2.6 || dF < 0.99 || dF > 3.4) continue;
+        const ang = Math.acos(Math.max(-1, Math.min(1, ((F.x - Q.x) * (D.x - Q.x) + (F.y - Q.y) * (D.y - Q.y)) / (dist(F, Q) * dQ || 1))));
+        const sc = -ang + rng() * 0.4;                    // spitzer Haken = besser
+        if (ang < 1.9 && sc > bs) { bs = sc; best = h; }
       }
+      if (best == null) continue;
+      const turns = rng() < 0.3 ? 1.5 : 0.75;
+      doMove({ r: A, e: eA, h: best, from: w.ropes[A].e[eA], via: arcAround(Q, S0, P[best], turns, rng() < 0.5 ? 1 : -1, cols, rows), kind: "hook" });
+      return true;
     }
-    if (done) continue;
-    // Überdecken: ein Ende gerade quer über möglichst viele andere Kordeln
+    return false;
+  }
+  // Überdecken: ein Ende gerade quer über möglichst viele andere Kordeln (nur `only`, falls angegeben)
+  function cover(only) {
+    const free = freeHoles(), tg = tangledSet(Rope.crossings(w));
     let best = null, bs = -Infinity;
-    for (let c = 0; c < 40; c++) {
-      const rp = ri(r), e = ri(2), R = w.ropes[rp], from = P[R.e[e]], other = P[R.e[1 - e]], h = free[ri(free.length)], to = P[h];
+    for (let c = 0; c < 60; c++) {
+      const rp = only != null ? only : ri(r), e = ri(2), R = w.ropes[rp], from = P[R.e[e]], other = P[R.e[1 - e]], h = free[ri(free.length)], to = P[h];
       if (dist(to, other) < 0.99 || dist(to, other) > 3) continue;
-      const tg = new Set(); cr.forEach((x) => { tg.add(x.a); tg.add(x.b); });
       let sc = rng() + (tg.has(rp) ? 0 : 3);                    // freie Kordeln zuerst ins Spiel bringen
       w.ropes.forEach((Q, q) => { if (q !== rp && segX(other, to, P[Q.e[0]], P[Q.e[1]])) sc += tg.has(q) ? 2 : 3.5; });
       if (sc > bs) { bs = sc; best = { r: rp, e, h, from: R.e[e], via: [], kind: "cover" }; }
     }
     if (best) doMove(best);
+    return !!best;
+  }
+  for (let k = 0; k < S; k++) {
+    const unders = Rope.crossings(w).filter((x) => x.top >= 0);
+    if (unders.length && (k % 3 !== 0 || rng() < 0.3) && tryHook(unders)) continue;
+    cover();
+  }
+  // Nachknoten: Kordeln, die noch frei liegen, quer durch den Knoten legen und einhaken
+  for (let extra = 0; extra < r * 2; extra++) {
+    const freeR = range(r).filter((q) => !tangledSet(Rope.crossings(w)).has(q));
+    if (!freeR.length) break;
+    const rp = freeR[ri(freeR.length)];
+    cover(rp);
+    const under = Rope.crossings(w).filter((x) => x.top === rp);
+    if (under.length) tryHook(under);
   }
   const start = Rope.snapshot(w), packed = Rope.pack(w), tg = tangle(w);
   // 3. Probe rückwärts, jeweils auf dem umgekehrten Weg
