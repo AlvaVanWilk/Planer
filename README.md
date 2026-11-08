@@ -53,3 +53,20 @@ eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es 
 - Ein Finger verschiebt, zwei Finger zoomen (am Rechner: Mausrad, Tasten `A`–`E`, `+`, `-`, `0`).
 - Auf der Leinwand ist nichts vorgefärbt – welches Bild entsteht, sieht man erst beim Legen.
 - Der Fortschritt wird im Browser gespeichert.
+
+---
+
+# Knoten – Entwirre die Fäden
+
+Im Ordner `knoten/` liegt ein Rätselspiel für iPad und Handy, ebenfalls eine
+einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
+`https://BENUTZERNAME.github.io/REPONAME/knoten/`.
+
+- Perlen sind mit Fäden verbunden. Ziehe die Perlen, bis sich kein Faden mehr kreuzt –
+  kupferrot leuchtende Fäden kreuzen sich noch.
+- Mehrere Finger können gleichzeitig ziehen. Zwei Finger auf freier Fläche zoomen,
+  doppelt tippen setzt die Ansicht zurück.
+- Jeder gelöste Knoten wird zu einem Bleiglasfenster; im Menü liegen alle als Galerie.
+- Unendlich viele Level, in Kapiteln zu je zehn mit eigener Farbstimmung. Jedes Level ist
+  garantiert lösbar (es wird aus einem kreuzungsfreien Netz erzeugt und dann verwirrt).
+- Rückgängig-Knopf, Glühbirne zeigt die verworrenste Perle. Fortschritt wird im Browser gespeichert.
