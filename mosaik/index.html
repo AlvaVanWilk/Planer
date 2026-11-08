@@ -1484,9 +1484,11 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         sol[i] = fill ? 1 : 0; rgbs[i] = a; col[i] = rgb(a);
         if (fill) { nFill++; acc[0] += a[0]; acc[1] += a[1]; acc[2] += a[2]; }
       }
+      const vr = new Uint8Array(N);
+      for (let i = 0; i < N; i++) vr[i] = ((Math.imul(i + 7, 2654435761) >>> 0) ^ (pi * 131 + wi * 17)) % 6;
       const z = PUZ[p.id];
       const pic = Object.assign({}, p, {
-        w, wi, pi, H, W, N, sol, col, rgbs, nFill, idx: PICS.length,
+        w, wi, pi, H, W, N, sol, col, rgbs, nFill, vr, idx: PICS.length,
         avg: rgb(acc.map(v => v / Math.max(1, nFill))),
         clues: Array.from(z.c, ch => (ch === "." ? -1 : +ch)),
         given: Array.from(z.g, ch => (ch === "." ? -1 : +ch)),
@@ -1525,58 +1527,250 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", w.mood[1]);
   }
 
-  /* ---------- Mosaiksteine ---------- */
+  /* ---------- Mosaiksteine ----------
+     Jeder Stein ist von Hand "geschnitten": leicht schiefe Kanten, je Feld eine von NV Formen.
+     slate  offener Stein: matter Schiefer mit Sprenkeln und gebrochener Kante
+     glass  gesetzter Stein: Smalten-Glas mit Farbwolken, Bläschen und Glanzsplitter
+     marble gesetzter Stein im Modus Klassisch
+     matte  Hintergrundstein nach der Enthüllung: unglasierte Keramik
+     hole / holeDot  leeres Feld: vertieftes Mörtelbett (Farbe tönt es leicht) */
+  const NV = 6, PAD = 0.14;
   const cache = new Map();
+  const srng = seed => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const shade = (a, k) => k >= 0 ? mix(a, [255, 255, 255], k) : deep(a, -k);
+  // Abdunkeln wie dickes Glas: satter und wärmer statt grau
+  function deep(a, k) {
+    let [r, g, b] = a.map(v => v / 255);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, dd = mx - mn;
+    let h = 0, sat = 0;
+    if (dd) {
+      sat = dd / (1 - Math.abs(2 * l - 1));
+      h = mx === r ? ((g - b) / dd) % 6 : mx === g ? (b - r) / dd + 2 : (r - g) / dd + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    if (h > 38 && h < 75 && sat > 0.25) h -= (h - 30) * 0.55 * k * 1.6; // Gelb wird zu Bernstein
+    const L = l * (1 - k * 0.85), S = Math.min(1, sat * (1 + k * 0.5));
+    const C = (1 - Math.abs(2 * L - 1)) * S, X = C * (1 - Math.abs(((h / 60) % 2) - 1)), m = L - C / 2;
+    const [rr, gg, bb] = h < 60 ? [C, X, 0] : h < 120 ? [X, C, 0] : h < 180 ? [0, C, X] : h < 240 ? [0, X, C] : h < 300 ? [X, 0, C] : [C, 0, X];
+    return [(rr + m) * 255, (gg + m) * 255, (bb + m) * 255];
+  }
+  const rgba = (a, al) => "rgba(" + Math.round(a[0]) + "," + Math.round(a[1]) + "," + Math.round(a[2]) + "," + al + ")";
+  const parseCol = s => s[0] === "#" ? hex(s) : s.match(/\d+/g).slice(0, 3).map(Number);
+
   function rr(c, x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
     c.beginPath(); c.moveTo(x + r, y);
     c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
     c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
   }
-  function sprite(style, color, S) {
-    S = Math.max(2, Math.round(S));
-    const key = style + color + S;
+  // Ecken eines Steins im Einheitsquadrat, je Form leicht verschoben
+  const CORNERS = [];
+  for (let v = 0; v < NV; v++) {
+    const R = srng(v * 7919 + 101), j = 0.045;
+    CORNERS.push([[R() * j, R() * j], [1 - R() * j, R() * j], [1 - R() * j, 1 - R() * j], [R() * j, 1 - R() * j]]);
+  }
+  function stonePath(c, v, x, y, S, inset = 0, rad = 0.13, keep = false) {
+    const p = CORNERS[v % NV].map(([u, w]) => [x + inset + u * (S - 2 * inset), y + inset + w * (S - 2 * inset)]);
+    const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const r = S * rad;
+    if (!keep) c.beginPath();
+    const s0 = m(p[3], p[0]); c.moveTo(s0[0], s0[1]);
+    for (let k = 0; k < 4; k++) { const a = p[k], b = p[(k + 1) % 4]; c.arcTo(a[0], a[1], b[0], b[1], r); }
+    c.closePath();
+  }
+  // Form als Path2D im Einheitsquadrat, für Überlagerungen direkt auf dem Brett
+  const UNIT = [];
+  for (let v = 0; v < NV; v++) {
+    const P = new Path2D(), p = CORNERS[v], m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], s0 = m(p[3], p[0]);
+    P.moveTo(s0[0], s0[1]);
+    for (let k = 0; k < 4; k++) { const a = p[k], b = p[(k + 1) % 4]; P.arcTo(a[0], a[1], b[0], b[1], 0.13); }
+    P.closePath(); UNIT.push(P);
+  }
+
+  function sprite(style, color, S, v = 0) {
+    S = Math.max(4, Math.round(S)); v = v % NV;
+    const key = style + "|" + color + "|" + S + "|" + v;
     let cv = cache.get(key);
     if (cv) return cv;
-    if (cache.size > 4000) cache.clear();
-    cv = document.createElement("canvas"); cv.width = cv.height = S;
-    paint(cv.getContext("2d"), S, style, color);
+    if (cache.size > 1600) cache.clear();
+    const P = Math.ceil(S * PAD);
+    cv = document.createElement("canvas"); cv.width = cv.height = S + 2 * P; cv.S = S; cv.pad = P;
+    paint(cv.getContext("2d", { willReadFrequently: true }), S, P, style, color, v);
     cache.set(key, cv);
     return cv;
   }
-  function paint(c, S, style, color) {
-    const r = S * 0.2;
-    if (style === "slate") {
-      const g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, "#3b364f"); g.addColorStop(1, "#2a2639");
-      rr(c, 0, 0, S, S, r); c.fillStyle = g; c.fill();
-      c.save(); c.clip(); c.strokeStyle = "rgba(255,255,255,.1)"; c.lineWidth = Math.max(1, S * 0.05);
-      rr(c, S * 0.03, S * 0.03, S * 0.94, S * 1.2, r); c.stroke(); c.restore();
-    } else if (style === "hole" || style === "holeDot") {
-      rr(c, 0, 0, S, S, r); c.fillStyle = "rgba(4,3,10,.36)"; c.fill();
-      c.save(); c.clip();
-      const g = c.createLinearGradient(0, 0, 0, S * 0.5); g.addColorStop(0, "rgba(0,0,0,.4)"); g.addColorStop(1, "rgba(0,0,0,0)");
-      c.fillStyle = g; c.fillRect(0, 0, S, S); c.restore();
-      if (style === "holeDot") { c.beginPath(); c.arc(S / 2, S / 2, Math.max(1, S * 0.065), 0, 7); c.fillStyle = "rgba(255,255,255,.3)"; c.fill(); }
-    } else if (style === "glass") {
-      rr(c, 0, 0, S, S, r); c.fillStyle = color; c.fill();
-      c.save(); c.clip();
-      let g = c.createLinearGradient(0, 0, S, S);
-      g.addColorStop(0, "rgba(255,255,255,.34)"); g.addColorStop(0.42, "rgba(255,255,255,.05)"); g.addColorStop(1, "rgba(0,0,0,.26)");
-      c.fillStyle = g; c.fillRect(0, 0, S, S);
-      c.lineWidth = Math.max(1, S * 0.07); c.strokeStyle = "rgba(255,255,255,.22)";
-      rr(c, S * 0.04, S * 0.04, S * 0.92, S * 0.92, r * 0.9); c.stroke();
-      c.translate(S * 0.32, S * 0.26); c.rotate(-0.6);
-      c.beginPath(); c.ellipse(0, 0, S * 0.2, S * 0.085, 0, 0, 7);
-      c.fillStyle = "rgba(255,255,255,.5)"; c.fill();
-      c.restore();
-    } else if (style === "matte") {
-      rr(c, 0, 0, S, S, r * 0.8); c.fillStyle = color; c.fill();
-      c.save(); c.clip();
-      const g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, "rgba(255,255,255,.12)"); g.addColorStop(1, "rgba(0,0,0,.12)");
-      c.fillStyle = g; c.fillRect(0, 0, S, S); c.restore();
-    } else if (style === "flat") {
-      rr(c, 0, 0, S, S, r); c.fillStyle = color; c.fill();
+  // Stein der Größe size bei (x,y) zeichnen (Rand für Schatten eingerechnet)
+  function blit(c, img, x, y, w, h = w) {
+    const k = img.width / img.S, o = img.pad / img.S;
+    c.drawImage(img, x - o * w, y - o * h, w * k, h * k);
+  }
+
+  function grain(c, S, P, amt, seed, cool) {
+    if (S < 10) return;
+    const n = S + 2 * P, id = c.getImageData(0, 0, n, n), d = id.data, R = srng(seed);
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      let g = (R() - 0.5) * amt;
+      if (R() < 0.012) g += (R() < 0.5 ? -1 : 1) * amt * 1.6; // einzelne Körner
+      d[i] += g; d[i + 1] += g; d[i + 2] += g + (cool ? g * 0.15 : 0);
     }
+    c.putImageData(id, 0, 0);
+  }
+  function blobs(c, S, P, R, n, colA, colB, al) {
+    for (let k = 0; k < n; k++) {
+      const x = P + R() * S, y = P + R() * S, r = S * (0.18 + R() * 0.35);
+      const g = c.createRadialGradient(x, y, 0, x, y, r);
+      const col = R() < 0.5 ? colA : colB;
+      g.addColorStop(0, rgba(col, al)); g.addColorStop(1, rgba(col, 0));
+      c.fillStyle = g; c.fillRect(P, P, S, S);
+    }
+  }
+  function bevel(c, S, P, v, light, dark, w) {
+    stonePath(c, v, P, P, S); c.save(); c.clip();
+    const g = c.createLinearGradient(P, P, P + S, P + S);
+    g.addColorStop(0, "rgba(255,255,255," + light + ")"); g.addColorStop(0.45, "rgba(255,255,255,0)");
+    g.addColorStop(0.6, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0," + dark + ")");
+    c.lineWidth = S * w * 2; c.strokeStyle = g; stonePath(c, v, P, P, S); c.stroke();
+    c.restore();
+  }
+  function dropShadow(c, S, P, v, color, blur, dy) {
+    c.save(); c.globalCompositeOperation = "destination-over";
+    c.shadowColor = color; c.shadowBlur = S * blur; c.shadowOffsetY = S * dy; c.shadowOffsetX = S * dy * 0.3;
+    stonePath(c, v, P, P, S); c.fillStyle = "#000"; c.fill(); c.restore();
+  }
+
+  function paint(c, S, P, style, color, v) {
+    const R = srng(v * 977 + S * 13 + style.length * 31 + (color ? parseCol(color)[0] * 7 + parseCol(color)[2] : 0));
+    if (style === "hole" || style === "holeDot") {
+      // vertieftes Mörtelbett
+      const base = color ? mix([20, 17, 25], parseCol(color), 0.14) : [20, 17, 25], ins = S * 0.04;
+      stonePath(c, v, P, P, S, ins); c.fillStyle = rgba(base, 1); c.fill();
+      c.save(); c.clip();
+      blobs(c, S, P, R, 3, [0, 0, 0], [255, 255, 255], 0.05);
+      c.restore();
+      grain(c, S, P, 28, v * 31 + S, false);
+      // weicher Schatten, der von der oberen linken Kante ins Loch fällt
+      c.save(); stonePath(c, v, P, P, S, ins); c.clip();
+      c.shadowColor = "rgba(0,0,0,.9)"; c.shadowBlur = S * 0.14; c.shadowOffsetX = S * 0.05; c.shadowOffsetY = S * 0.09;
+      c.beginPath(); c.rect(-S, -S, S * 4, S * 4); stonePath(c, v, P, P, S, ins, 0.13, true);
+      c.fillStyle = "#000"; c.fill("evenodd");
+      c.restore();
+      // Lichtkante unten rechts
+      c.save(); stonePath(c, v, P, P, S, ins); c.clip();
+      const h = c.createLinearGradient(P + S, P + S, P + S * 0.45, P + S * 0.45);
+      h.addColorStop(0, "rgba(255,255,255,.16)"); h.addColorStop(0.3, "rgba(255,255,255,0)");
+      c.lineWidth = S * 0.06; c.strokeStyle = h; stonePath(c, v, P, P, S, ins); c.stroke();
+      c.restore();
+      if (style === "holeDot") {
+        const x = P + S * 0.5, y = P + S * 0.52, r = S * 0.065;
+        c.beginPath(); c.arc(x, y + r * 0.3, r, 0, 7); c.fillStyle = "rgba(0,0,0,.5)"; c.fill();
+        c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = "rgba(160,150,170,.55)"; c.fill();
+        c.beginPath(); c.arc(x - r * 0.3, y - r * 0.35, r * 0.35, 0, 7); c.fillStyle = "rgba(255,255,255,.35)"; c.fill();
+      }
+      return;
+    }
+
+    let base;
+    if (style === "slate") { const d = (R() - 0.5) * 12; base = [66 + d, 62 + d, 76 + d * 1.2]; }
+    else if (style === "marble") base = [234, 226, 210];
+    else base = parseCol(color);
+
+    // Körper
+    stonePath(c, v, P, P, S);
+    const g0 = c.createLinearGradient(P, P, P + S * 0.3, P + S);
+    if (style === "glass") { g0.addColorStop(0, rgba(shade(base, 0.14), 1)); g0.addColorStop(1, rgba(shade(base, -0.22), 1)); }
+    else if (style === "slate") { g0.addColorStop(0, rgba(shade(base, 0.08), 1)); g0.addColorStop(1, rgba(shade(base, -0.14), 1)); }
+    else { g0.addColorStop(0, rgba(shade(base, 0.06), 1)); g0.addColorStop(1, rgba(shade(base, -0.1), 1)); }
+    c.fillStyle = g0; c.fill();
+    c.save(); stonePath(c, v, P, P, S); c.clip();
+
+    if (style === "glass") {
+      blobs(c, S, P, R, 5, shade(base, 0.35), shade(base, -0.4), 0.28);
+      // Dicke: Ränder dunkler, Mitte leuchtet
+      const vg = c.createRadialGradient(P + S * 0.46, P + S * 0.44, S * 0.12, P + S * 0.5, P + S * 0.5, S * 0.78);
+      vg.addColorStop(0, rgba(deep(base, 0.6), 0)); vg.addColorStop(1, rgba(deep(base, 0.6), 0.5));
+      c.fillStyle = vg; c.fillRect(P, P, S, S);
+      // durchscheinendes Licht unten rechts
+      const cg = c.createRadialGradient(P + S * 0.7, P + S * 0.74, 0, P + S * 0.7, P + S * 0.74, S * 0.42);
+      cg.addColorStop(0, rgba(shade(base, 0.55), 0.42)); cg.addColorStop(1, rgba(shade(base, 0.55), 0));
+      c.fillStyle = cg; c.fillRect(P, P, S, S);
+      // Bläschen
+      const nb = 2 + Math.floor(R() * 3);
+      for (let k = 0; k < nb; k++) {
+        const x = P + S * (0.2 + R() * 0.6), y = P + S * (0.2 + R() * 0.6), r = S * (0.012 + R() * 0.024);
+        c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = "rgba(255,255,255,.14)"; c.fill();
+        c.lineWidth = Math.max(0.6, S * 0.006); c.strokeStyle = "rgba(255,255,255,.4)"; c.stroke();
+      }
+    } else if (style === "slate") {
+      blobs(c, S, P, R, 4, [255, 255, 255], [0, 0, 0], 0.07);
+      if (R() < 0.6) { // feine Ader
+        c.beginPath(); const y0 = P + S * R();
+        c.moveTo(P, y0); c.bezierCurveTo(P + S * 0.3, y0 + S * (R() - 0.5) * 0.6, P + S * 0.7, y0 + S * (R() - 0.5) * 0.6, P + S, y0 + S * (R() - 0.5) * 0.5);
+        c.lineWidth = Math.max(0.6, S * 0.012); c.strokeStyle = "rgba(255,255,255,.08)"; c.stroke();
+      }
+    } else if (style === "marble") {
+      blobs(c, S, P, R, 3, [255, 255, 255], [190, 180, 165], 0.25);
+      for (let k = 0; k < 2; k++) {
+        c.beginPath(); const x0 = P + S * R();
+        c.moveTo(x0, P); c.bezierCurveTo(x0 + S * (R() - 0.5), P + S * 0.35, x0 + S * (R() - 0.5), P + S * 0.65, x0 + S * (R() - 0.5) * 0.8, P + S);
+        c.lineWidth = S * (0.012 + R() * 0.015); c.strokeStyle = "rgba(120,108,96,.32)"; c.stroke();
+        c.lineWidth = S * 0.05; c.strokeStyle = "rgba(150,138,124,.08)"; c.stroke();
+      }
+    } else if (style === "matte") {
+      blobs(c, S, P, R, 3, shade(base, 0.2), shade(base, -0.2), 0.18);
+    }
+    c.restore();
+
+    grain(c, S, P, style === "slate" ? 22 : style === "glass" ? 7 : style === "marble" ? 7 : 14, v * 53 + S + base[0], style === "slate");
+
+    if (style === "glass") {
+      bevel(c, S, P, v, 0.5, 0.5, 0.06);
+      c.save(); stonePath(c, v, P, P, S); c.clip();
+      // breiter, flacher Glanz über die obere Hälfte
+      const gl = c.createLinearGradient(P, P, P + S, P + S);
+      gl.addColorStop(0, "rgba(255,255,255,.2)"); gl.addColorStop(0.32, "rgba(255,255,255,.07)");
+      gl.addColorStop(0.34, "rgba(255,255,255,0)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = gl; c.fillRect(P, P, S, S);
+      c.restore();
+      // Lichtkante an der Oberkante, wie bei geschliffenem Glas
+      c.save(); stonePath(c, v, P, P, S); c.clip(); c.lineCap = "round";
+      const lg = c.createLinearGradient(P + S * 0.12, 0, P + S * 0.88, 0);
+      lg.addColorStop(0, "rgba(255,255,255,0)"); lg.addColorStop(0.3, "rgba(255,255,255,.55)"); lg.addColorStop(1, "rgba(255,255,255,0)");
+      c.beginPath(); c.moveTo(P + S * 0.14, P + S * 0.1); c.lineTo(P + S * 0.86, P + S * 0.085);
+      c.lineWidth = S * 0.03; c.strokeStyle = lg; c.stroke();
+      const lv = c.createLinearGradient(0, P + S * 0.12, 0, P + S * 0.8);
+      lv.addColorStop(0, "rgba(255,255,255,.35)"); lv.addColorStop(1, "rgba(255,255,255,0)");
+      c.beginPath(); c.moveTo(P + S * 0.09, P + S * 0.16); c.lineTo(P + S * 0.085, P + S * 0.7);
+      c.lineWidth = S * 0.022; c.strokeStyle = lv; c.stroke();
+      c.restore();
+      dropShadow(c, S, P, v, rgba(shade(base, -0.75), 0.75), 0.09, 0.07);
+    } else if (style === "slate") {
+      bevel(c, S, P, v, 0.26, 0.55, 0.07);
+      dropShadow(c, S, P, v, "rgba(0,0,0,.65)", 0.08, 0.07);
+    } else if (style === "marble") {
+      bevel(c, S, P, v, 0.6, 0.35, 0.06);
+      c.save(); stonePath(c, v, P, P, S); c.clip();
+      const gl = c.createLinearGradient(P, P, P + S, P + S);
+      gl.addColorStop(0, "rgba(255,255,255,.35)"); gl.addColorStop(0.3, "rgba(255,255,255,0)");
+      c.fillStyle = gl; c.fillRect(P, P, S, S); c.restore();
+      dropShadow(c, S, P, v, "rgba(0,0,0,.6)", 0.08, 0.07);
+    } else {
+      bevel(c, S, P, v, 0.22, 0.35, 0.05);
+      dropShadow(c, S, P, v, "rgba(0,0,0,.45)", 0.06, 0.05);
+    }
+  }
+
+  // Mörtelbett als Muster für das Brett
+  let mortar = null;
+  function mortarPattern(c) {
+    if (mortar) return c.createPattern(mortar, "repeat");
+    const n = 180; mortar = document.createElement("canvas"); mortar.width = mortar.height = n;
+    const m = mortar.getContext("2d");
+    m.fillStyle = "#1b1721"; m.fillRect(0, 0, n, n);
+    const id = m.getImageData(0, 0, n, n), d = id.data, R = srng(42);
+    for (let i = 0; i < d.length; i += 4) { let g = (R() - 0.5) * 18; if (R() < 0.02) g += 22; d[i] += g; d[i + 1] += g; d[i + 2] += g; }
+    m.putImageData(id, 0, 0);
+    return c.createPattern(mortar, "repeat");
   }
 
   // Fertiges Mosaik in eine Leinwand malen (Übersicht, Galerie).
@@ -1585,12 +1779,12 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     const n = Math.max(pic.W, pic.H);
     cv.width = cv.height = Math.round(px * d);
     const c = cv.getContext("2d");
-    const cell = cv.width / n, gap = Math.max(0.7, cell * 0.07);
-    c.fillStyle = "#15111c"; c.fillRect(0, 0, cv.width, cv.height);
+    const cell = cv.width / n, gap = Math.max(0.8, cell * 0.08), S = cell - gap;
+    c.fillStyle = mortarPattern(c); c.fillRect(0, 0, cv.width, cv.height);
     const ox = (n - pic.W) * cell / 2, oy = (n - pic.H) * cell / 2;
     for (let r = 0; r < pic.H; r++) for (let q = 0; q < pic.W; q++) {
       const i = r * pic.W + q;
-      c.drawImage(sprite(pic.sol[i] ? "glass" : "matte", pic.col[i], cell - gap), ox + q * cell + gap / 2, oy + r * cell + gap / 2);
+      blit(c, sprite(pic.sol[i] ? "glass" : "matte", pic.col[i], S, pic.vr[i]), ox + q * cell + gap / 2, oy + r * cell + gap / 2, S);
     }
   }
 
@@ -1688,7 +1882,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         const S = 56, x = 22 + k * 66, y = 8;
         const sc = Math.max(0.01, easeBack(p));
         c.save(); c.translate(x + S / 2, y + S / 2); c.scale(sc, 1); c.translate(-S / 2, -S / 2);
-        c.drawImage(sprite(p < 0.5 ? "slate" : "glass", col, S), 0, 0); c.restore();
+        blit(c, sprite(p < 0.5 ? "slate" : "glass", col, S, k), 0, 0, S); c.restore();
       });
       if (more) requestAnimationFrame(step);
     };
@@ -1701,6 +1895,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   let G = null;
 
   function startGame(pic) {
+    cache.clear();
     AU.setWorld(pic.w); setMood(pic.w);
     const N = pic.N, st = new Int8Array(N).fill(-1);
     pic.given.forEach((v, i) => { if (v >= 0) st[i] = v; });
@@ -1733,8 +1928,31 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     save.last = pic.id; persist();
     requestWake();
     kick();
+    warm(pic);
     coach("start");
     if (!save.help) { save.help = true; persist(); setTimeout(openHelp, 450); }
+  }
+
+  // Steine vorab schneiden, damit die Enthüllung flüssig läuft
+  function warm(pic) {
+    const jobs = [];
+    for (let i = 0; i < pic.N; i++) {
+      jobs.push(i);
+    }
+    const step = () => {
+      if (!G || G.pic !== pic) return;
+      const S = L.s * Math.min(2, L.d), t0 = now();
+      while (jobs.length && now() - t0 < 8) {
+        const i = jobs.shift();
+        if (pic.sol[i]) sprite("glass", pic.col[i], S, pic.vr[i]);
+        else {
+          sprite("matte", pic.col[i], S, pic.vr[i]);
+          sprite(pic.clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? pic.col[i] : "", S, pic.vr[i]);
+        }
+      }
+      if (jobs.length) setTimeout(step, 20);
+    };
+    setTimeout(step, 400);
   }
 
   function layout() {
@@ -2064,71 +2282,94 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     c.setTransform(d, 0, 0, d, 0, 0);
     c.clearRect(0, 0, L.cw, L.ch);
     const R = G.reveal, rt = R ? t - R.t0 : 0;
-    // Tablett
+    // Tablett: Mörtelbett
     rr(c, 0.5, 0.5, L.cw - 1, L.ch - 1, s * 0.42);
-    c.fillStyle = R ? "rgba(10,8,16," + (0.42 + 0.4 * clamp(rt / 1500)) + ")" : "rgba(10,8,18,.42)"; c.fill();
-    c.strokeStyle = "rgba(255,255,255,.07)"; c.lineWidth = 1; c.stroke();
-    geom(R ? 1 - 0.8 * ease(clamp((rt - 900) / 1100)) : 1);
+    c.fillStyle = mortarPattern(c); c.fill();
+    const tg = c.createLinearGradient(0, 0, 0, L.ch);
+    tg.addColorStop(0, "rgba(255,255,255,.04)"); tg.addColorStop(1, "rgba(0,0,0,.25)");
+    c.fillStyle = tg; c.fill();
+    if (R) { c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
+    c.strokeStyle = "rgba(255,255,255,.08)"; c.lineWidth = 1; c.stroke();
+    geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4200;
-    const S = s * d, numA = R ? 1 - clamp(rt / 500) : 1;
+    const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
     const fontPx = Math.round(s * 0.5);
     c.font = "500 " + fontPx + "px Lexend, -apple-system, sans-serif";
     c.textAlign = "center"; c.textBaseline = "middle";
     const put = (img, x, y, sc = 1, alpha = 1, sx = sc) => {
-      if (alpha <= 0.002) return;
-      c.globalAlpha = alpha;
+      if (alpha <= 0.002 || sx <= 0.01) return;
+      c.globalAlpha = Math.min(1, alpha);
       const w = s * sx, h = s * sc;
-      c.drawImage(img, x + (s - w) / 2, y + (s - h) / 2, w, h);
+      blit(c, img, x + (s - w) / 2, y + (s - h) / 2, w, h);
       c.globalAlpha = 1;
     };
+    const over = (x, y, vv, color, alpha, sc = 1, sx = sc) => {
+      if (alpha <= 0.002) return;
+      const w = s * sx, h = s * sc;
+      c.save(); c.translate(x + (s - w) / 2, y + (s - h) / 2); c.scale(w, h);
+      c.globalAlpha = Math.min(1, alpha); c.fillStyle = color; c.fill(UNIT[vv]); c.restore();
+    };
+    const filledLook = i => G.zauber ? sprite("glass", col[i], S, pic.vr[i]) : sprite("marble", "", S, pic.vr[i]);
+    const holeLook = i => sprite(clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? col[i] : "", S, pic.vr[i]);
     for (let r = 0; r < H; r++) for (let q = 0; q < W; q++) {
-      const i = r * W + q, x0 = L.xs[q], y = L.ys[r];
-      let v = G.st[i], sc = 1, sx = 1, dx = 0, flash = 0, red = 0;
+      const i = r * W + q, x0 = L.xs[q], y = L.ys[r], vv = pic.vr[i];
+      let v = G.st[i], dx = 0, red = 0, ap = -1, ak = "";
       const a = G.anim[i];
       if (a) {
-        const dur = a.k === "wrong" ? 620 : a.k === "fill" ? 460 : 300;
+        const dur = a.k === "wrong" ? 620 : a.k === "fill" ? 520 : a.k === "mark" ? 380 : 300;
         const p = (t - a.t) / dur;
         busy = true;
         if (p < 0) v = a.from;
         else if (p >= 1) G.anim[i] = null;
-        else if (a.k === "fill") { sx = clamp(easeBack(p), 0.02, 2); sc = 0.85 + 0.15 * ease(p); flash = (1 - p) * 0.7; }
-        else if (a.k === "mark" || a.k === "clear") sc = 0.78 + 0.22 * ease(p);
-        else if (a.k === "wrong") { dx = Math.sin(p * 28) * s * 0.1 * (1 - p); red = 1 - p; }
+        else { ap = p; ak = a.k; }
+        if (ak === "wrong") { dx = Math.sin(p * 28) * s * 0.1 * (1 - p); red = 1 - p; }
       }
       const x = x0 + dx;
       if (R) {
         const p = clamp((rt - R.d[i]) / 560);
         if (sol[i]) {
-          if (!G.zauber) put(sprite("glass", INK, S), x, y, 1, 1 - p);
-          put(sprite("glass", col[i], S), x, y, 1, G.zauber ? 1 : p);
-          const f = Math.sin(p * Math.PI) * 0.6;
-          if (f > 0.01) put(sprite("flat", "#ffffff", S), x, y, 1, f);
+          if (!G.zauber) put(sprite("marble", "", S, vv), x, y, 1, 1 - p);
+          put(sprite("glass", col[i], S, vv), x, y, 1, G.zauber ? 1 : p);
+          over(x, y, vv, "#ffffff", Math.sin(p * Math.PI) * 0.45);
         } else {
-          put(sprite(v === 0 ? "hole" : "slate", "", S), x, y, 1, 1 - p);
-          if (G.zauber && v === 0) put(sprite("flat", col[i], S), x, y, 1, 0.26 * (1 - p));
-          put(sprite("matte", col[i], S), x, y, 0.55 + 0.45 * ease(p), p);
+          put(v === 0 ? holeLook(i) : sprite("slate", "", S, vv), x, y, 1, 1 - p);
+          put(sprite("matte", col[i], S, vv), x, y, 0.6 + 0.4 * ease(p), p);
         }
-      } else if (v < 0) put(sprite("slate", "", S), x, y, sc, 1, sc);
-      else if (v === 1) {
-        put(sprite("glass", G.zauber ? col[i] : INK, S), x, y, sc, 1, sx);
-        if (flash > 0.01) put(sprite("flat", "#ffffff", S), x, y, sc, flash * 0.6, sx);
-      } else {
-        put(sprite(clues[i] >= 0 ? "hole" : "holeDot", "", S), x, y, sc);
-        if (G.zauber) put(sprite("flat", col[i], S), x, y, sc, 0.26);
-      }
-      if (red > 0) put(sprite("flat", "#ff6b6b", S), x, y, 1, red * 0.55);
+      } else if (ak === "fill") {
+        // Stein dreht sich um und zeigt seine Glasseite
+        put(holeLook(i), x, y, 1, 0.9);
+        if (ap < 0.42) put(sprite("slate", "", S, vv), x, y, 1 + 0.06 * Math.sin(ap / 0.42 * Math.PI), 1, 1 - ease(ap / 0.42));
+        else {
+          const q2 = (ap - 0.42) / 0.58;
+          put(filledLook(i), x, y, 1 + 0.08 * Math.sin(q2 * Math.PI), 1, clamp(easeBack(q2), 0.02, 1.3));
+          over(x, y, vv, "#ffffff", (1 - q2) * 0.35, 1, clamp(easeBack(q2), 0.02, 1.3));
+        }
+      } else if (ak === "mark") {
+        // Stein wird herausgehoben, darunter das Mörtelbett
+        put(holeLook(i), x, y, 1);
+        put(sprite("slate", "", S, vv), x, y - s * 0.12 * ease(ap), 1 + 0.1 * ease(ap), 1 - ease(ap));
+      } else if (ak === "clear") {
+        put(holeLook(i), x, y, 1);
+        put(sprite("slate", "", S, vv), x, y, 0.8 + 0.2 * ease(ap), ease(ap));
+      } else if (v < 0) put(sprite("slate", "", S, vv), x, y);
+      else if (v === 1) put(filledLook(i), x, y);
+      else put(holeLook(i), x, y);
+      if (red > 0) over(x, y, vv, "#ff6b6b", red * 0.5);
       // Zahl
       const k = clues[i];
       if (k >= 0 && numA > 0) {
-        let fill;
-        if (v === 1) fill = G.zauber ? (lum(pic.rgbs[i]) > 0.62 ? "#1c1626" : "#ffffff") : "#2a2234";
-        else fill = v === 0 ? "#cfc9dc" : "#f3eefb";
+        let fill, sh = "rgba(0,0,0,.55)";
+        if (v === 1) {
+          if (G.zauber) { const light = lum(pic.rgbs[i]) > 0.6; fill = light ? "#1c1626" : "#ffffff"; sh = light ? "rgba(255,255,255,.35)" : "rgba(0,0,0,.5)"; }
+          else { fill = "#2a2234"; sh = "rgba(255,255,255,.5)"; }
+        } else fill = v === 0 ? "#bdb5cc" : "#f4eee4";
         let alpha = numA;
         const cs = G.cs[i];
         if (cs === 1) { const p = clamp((t - G.ct[i]) / 600); alpha *= 1 - 0.68 * p; if (p < 1) busy = true; }
         if (cs === 2) fill = "#ff8f86";
-        c.globalAlpha = alpha; c.fillStyle = fill;
-        c.fillText(String(k), x + s / 2, y + s / 2 + s * 0.03);
+        const tx = x + s / 2, ty = y + s / 2 + s * 0.03;
+        c.globalAlpha = alpha * 0.9; c.fillStyle = sh; c.fillText(String(k), tx, ty + Math.max(1, s * 0.035));
+        c.globalAlpha = alpha; c.fillStyle = fill; c.fillText(String(k), tx, ty);
         c.globalAlpha = 1;
       }
     }
@@ -2405,7 +2646,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     for (let i = 0; i < 25; i++) {
       const r = Math.floor(i / n), q = i % n, x = q * s + g / 2, y = r * s + g / 2, inB = r >= 0 && r <= 2 && q >= 0 && q <= 2;
       c.globalAlpha = inB ? 1 : 0.35;
-      c.drawImage(sprite(fill[i] ? "glass" : "hole", cols[i % 5], s - g), x, y);
+      blit(c, sprite(fill[i] ? "glass" : "hole", fill[i] ? cols[i % 5] : "", s - g, i), x, y, s - g);
       c.globalAlpha = 1;
     }
     c.fillStyle = "#ffffff"; c.fillText("6", s * 1.5, s * 1.5);
@@ -2459,7 +2700,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   document.addEventListener("pointerdown", () => AU.init(), { once: true });
   fxSize();
   renderHome();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { cache.clear(); kick(); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => kick());
   window.__mosaik = { PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
 })();
 </script>
