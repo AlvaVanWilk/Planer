@@ -44,7 +44,10 @@
     <div class="gstat"><div class="stars" id="gStars"></div><div class="lives" id="gLives" role="img"></div><div class="gprog"><i id="gProg"></i></div></div>
   </header>
   <div class="gmain">
-    <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas></div>
+    <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas>
+      <canvas id="mini" hidden aria-label="Übersichtskarte"></canvas>
+      <div id="zoomBox" hidden><button class="ib" id="zIn" aria-label="Näher heran"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="ib" id="zOut" aria-label="Weiter weg"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><button class="ib" id="zAll" aria-label="Ganzes Bild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div>
+    </div>
     <div class="toolsWrap">
       <div class="toast" id="toast"></div>
       <footer class="tools">

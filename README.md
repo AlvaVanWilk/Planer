@@ -121,6 +121,14 @@ den Bestzeiten jedes Bildes, sortiert nach Welten. Punkte je Bild: so viele wie 
 (100 bei 10×10, 400 bei 20×20), mit 3/2/1 Sternen 100/70/40 % davon, dazu bis zu 30 % Tempo-Bonus,
 wenn man schneller ist als 1,5 Sekunden pro Feld. Es zählt das beste Ergebnis je Bild.
 
+**Gemeinschaftswerke**: riesige Szenen (72×48, fast 3.500 Felder), an denen die ganze Familie
+gleichzeitig legt – jederzeit, ohne Warten. Es bleiben nur Steine liegen, die stimmen, darum kann
+sich niemand in die Quere kommen. Was andere legen, erscheint nach ein paar Sekunden mit ihrem
+Namen. Zwei Finger schieben und zoomen, die kleine Karte zeigt das ganze Bild. Ein Fehler kostet
+einen Tropfen (alle 20 Sekunden kommt einer zurück). Ist ein Werk fertig, sehen alle die
+Enthüllung mit der Liste, wer wie viele Steine gelegt hat, und das nächste Werk öffnet sich.
+Der gemeinsame Stand liegt in `mosaik-daten/coop_*.php`. Ohne Webspace legt man allein.
+
 Beim ersten Aufruf legt `api.php` daneben den Ordner `mosaik-daten/` an. Darin liegt je Konto
 eine Datei. Passwörter sind nur als Hash gespeichert, die Dateien sind über den Browser nicht
 abrufbar. Nach 8 falschen Passwörtern ist ein Konto für 5 Minuten gesperrt; höchstens 30 Konten.

@@ -16,6 +16,10 @@ function diffFor(w, p) {
   const pi = w.pics.indexOf(p), d = w.diff;
   return Object.assign({ seed: SV.hashStr(p.id) }, d, { remove: d.remove + (pi - 2.5) * (d.ramp || 0) });
 }
+// Zwischenspeicher: unveränderte Bilder müssen nicht neu gebaut werden
+const CACHE = path.join(__dirname, "puzzle-cache.json");
+const SOLVER_SIG = SV.hashStr(fs.readFileSync(path.join(root, "src/solver.js"), "utf8")).toString(36);
+let cache = {}; try { cache = JSON.parse(fs.readFileSync(CACHE, "utf8")); } catch (e) { /* neu */ }
 const puzzles = {};
 let fail = 0;
 for (const w of global.MOSAIK_WORLDS) {
@@ -25,7 +29,9 @@ for (const w of global.MOSAIK_WORLDS) {
     const miss = [...new Set(p.art.join(""))].filter(c => c !== "." && !p.pal[c]);
     if (miss.length) throw new Error(p.id + ": Farbe fehlt für " + miss.join(""));
     const sol = [].concat(...p.art.map(r => [...r].map(c => (c !== "." && !(c >= "a" && c <= "z") ? 1 : 0))));
-    const r = SV.build(sol, H, W, diffFor(w, p));
+    const opts = diffFor(w, p), ck = SV.hashStr(p.art.join("") + JSON.stringify(opts) + SOLVER_SIG).toString(36);
+    let r = cache[p.id] && cache[p.id].k === ck ? { clues: Array.from(cache[p.id].c, ch => (ch === "." ? -1 : +ch)), given: Int8Array.from(Array.from(cache[p.id].g, ch => (ch === "." ? -1 : +ch))), pairSteps: cache[p.id].p } : null;
+    if (!r) { r = SV.build(sol, H, W, opts); cache[p.id] = { k: ck, c: r.clues.map(v => (v < 0 ? "." : String(v))).join(""), g: Array.from(r.given, v => (v < 0 ? "." : String(v))).join(""), p: r.pairSteps }; }
     // Gegenprobe: der Löser findet genau das Bild.
     const chk = SV.solve(H, W, r.clues, r.given, { pair: true });
     const same = chk.ok && sol.every((v, i) => chk.st[i] === v);
@@ -39,6 +45,7 @@ for (const w of global.MOSAIK_WORLDS) {
   }
 }
 if (fail) process.exit(1);
+fs.writeFileSync(CACHE, JSON.stringify(cache));
 
 const tpl = src("template.html");
 const css = src("style.css");

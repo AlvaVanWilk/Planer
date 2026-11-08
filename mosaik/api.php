@@ -177,6 +177,59 @@ switch ($action) {
     }
     out(['ok' => true, 'users' => $users]);
   }
+  // Gemeinschaftswerk: Steine werden nur hinzugefügt, nie geändert. Darum gibt es keine Konflikte.
+  case 'coop': {
+    [$key, $me] = findByToken($in['name'] ?? '', $in['token'] ?? '');
+    $id = (string)($in['id'] ?? ''); $n = (int)($in['n'] ?? 0);
+    if (!preg_match('/^[a-z0-9_-]{1,32}$/', $id) || $n < 1 || $n > 20000) fail('Unbekanntes Bild.');
+    $cells = $in['cells'] ?? [];
+    if (!is_array($cells) || count($cells) > 5000) fail('Zu viele Steine auf einmal.');
+    if (strlen(json_encode($in)) > 400000) fail('Zu groß.', 413);
+    $f = fopen("$dir/coop_$id.php", 'c+');
+    if (!$f || !flock($f, LOCK_EX)) fail('Gemeinschaftswerk gerade nicht erreichbar.', 503);
+    $raw = stream_get_contents($f);
+    $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
+    if (!is_array($c) || ($c['n'] ?? 0) !== $n) $c = ['n' => $n, 'state' => str_repeat('?', $n), 'ver' => 0, 'by' => [], 'recent' => [], 'seen' => [], 'done' => 0];
+    $now = time(); $who = $me['name']; $changed = 0;
+    foreach ($cells as $cv) {
+      if (!is_array($cv) || count($cv) < 2) continue;
+      $i = (int)$cv[0]; $v = (int)$cv[1];
+      if ($i < 0 || $i >= $n || ($v !== 0 && $v !== 1) || $c['state'][$i] !== '?') continue;
+      $c['state'][$i] = (string)$v; $changed++;
+      $c['by'][$who] = ($c['by'][$who] ?? 0) + 1;
+      $c['recent'][] = [$i, $who, $now];
+    }
+    // automatisch aufgedeckte Felder am Schluss: zählen für niemanden
+    $auto = $in['auto'] ?? [];
+    if (is_array($auto) && count($auto) <= 20000) foreach ($auto as $cv) {
+      if (!is_array($cv) || count($cv) < 2) continue;
+      $i = (int)$cv[0]; $v = (int)$cv[1];
+      if ($i < 0 || $i >= $n || ($v !== 0 && $v !== 1) || $c['state'][$i] !== '?') continue;
+      $c['state'][$i] = (string)$v; $changed++;
+    }
+    if ($changed) { $c['ver']++; $c['recent'] = array_slice($c['recent'], -600); }
+    if (!$c['done'] && strpos($c['state'], '?') === false) $c['done'] = $now;
+    $c['seen'][$who] = $now;
+    ftruncate($f, 0); rewind($f); fwrite($f, GUARD . json_encode($c, JSON_UNESCAPED_UNICODE)); fflush($f);
+    flock($f, LOCK_UN); fclose($f);
+    $active = []; foreach ($c['seen'] as $nm => $t) if ($nm !== $who && $now - $t < 40) $active[] = $nm;
+    $recent = array_values(array_filter($c['recent'], function ($r) use ($now, $who) { return $r[1] !== $who && $now - $r[2] < 30; }));
+    out(['ok' => true, 'ver' => $c['ver'], 'state' => ((int)($in['ver'] ?? -1) !== $c['ver'] || $changed) ? $c['state'] : null,
+      'recent' => $recent, 'active' => $active, 'by' => (object)$c['by'], 'done' => $c['done']]);
+  }
+  case 'coop_list': {
+    [$key, $me] = findByToken($in['name'] ?? '', $in['token'] ?? '');
+    $res = []; $now = time();
+    foreach ((array)($in['ids'] ?? []) as $id) {
+      if (!is_string($id) || !preg_match('/^[a-z0-9_-]{1,32}$/', $id)) continue;
+      $raw = @file_get_contents("$dir/coop_$id.php");
+      $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
+      if (!is_array($c)) { $res[$id] = ['known' => 0, 'total' => 0, 'done' => 0, 'active' => []]; continue; }
+      $active = []; foreach (($c['seen'] ?? []) as $nm => $t) if ($now - $t < 40) $active[] = $nm;
+      $res[$id] = ['known' => $c['n'] - substr_count($c['state'], '?'), 'total' => $c['n'], 'done' => $c['done'] ?? 0, 'active' => $active, 'by' => (object)($c['by'] ?? [])];
+    }
+    out(['ok' => true, 'list' => (object)$res]);
+  }
   case 'logout': {
     [$key, $u] = findByToken($in['name'] ?? '', $in['token'] ?? '');
     $h = hash('sha256', (string)$in['token']);
