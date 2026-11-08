@@ -122,7 +122,7 @@ function generate(level, seedBump = 0) {
     cover();
   }
   // Nachknoten: Kordeln, die noch frei liegen, quer durch den Knoten legen und einhaken
-  for (let extra = 0; extra < r * 2; extra++) {
+  for (let extra = 0; extra < r * 2 && hist.length < S + 4; extra++) {
     const freeR = range(r).filter((q) => !tangledSet(Rope.crossings(w)).has(q));
     if (!freeR.length) break;
     const rp = freeR[ri(freeR.length)];
@@ -131,10 +131,15 @@ function generate(level, seedBump = 0) {
     if (under.length) tryHook(under);
   }
   const start = Rope.snapshot(w), packed = Rope.pack(w), tg = tangle(w);
-  // 3. Probe rückwärts, jeweils auf dem umgekehrten Weg
-  for (let i = hist.length - 1; i >= 0; i--) { const m = hist[i]; move(w, m.r, m.e, m.from, m.via.slice().reverse()); }
-  settle(w, 150);
-  const solvedBack = crossCount(w) === 0;
+  // 3. Probe: rückwärts auf dem umgekehrten Weg – einmal ruhig, einmal hastig (das Ende hinkt
+  //    dem Finger hinterher und kürzt Bögen ab). Nur wenn beides aufgeht, zählt das Level.
+  let solvedBack = true;
+  for (const speed of [2.5, 9]) {
+    Rope.restore(w, start);
+    for (let i = hist.length - 1; i >= 0; i--) { const m = hist[i]; move(w, m.r, m.e, m.from, m.via.slice().reverse(), { speed }); }
+    settle(w, 150);
+    if (crossCount(w) !== 0) { solvedBack = false; break; }
+  }
   return { level, cols, rows, r, moves: hist.length, loops: hist.filter((m) => m.kind === "hook").length, ...tg, solvedBack, packed, start, hist, sol };
 }
 module.exports = { generate, params };
