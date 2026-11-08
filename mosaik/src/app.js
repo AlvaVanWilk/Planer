@@ -243,8 +243,8 @@
 
     if (style === "glass" || style === "gem") { paintSmalti(c, S, P, parseCol(color), v % SNV, Math.floor(v / SNV) % 3); return; }
     let base;
-    if (style === "slate") { const d = (R() - 0.5) * 12; base = [66 + d, 62 + d, 76 + d * 1.2]; }
-    else if (style === "marble") base = [234, 226, 210];
+    if (style === "slate") { const d = (R() - 0.5) * 14; base = [176 + d, 172 + d, 182 + d * 1.1]; }   // heller grauer Kalkstein
+    else if (style === "marble") base = [30, 28, 38];                                                  // polierter Onyx
     else base = parseCol(color);
 
     // Körper
@@ -256,35 +256,34 @@
     c.save(); stonePath(c, v, P, P, S); c.clip();
 
     if (style === "slate") {
-      blobs(c, S, P, R, 4, [255, 255, 255], [0, 0, 0], 0.07);
+      blobs(c, S, P, R, 4, [255, 255, 255], [90, 86, 100], 0.12);
       if (R() < 0.6) { // feine Ader
         c.beginPath(); const y0 = P + S * R();
         c.moveTo(P, y0); c.bezierCurveTo(P + S * 0.3, y0 + S * (R() - 0.5) * 0.6, P + S * 0.7, y0 + S * (R() - 0.5) * 0.6, P + S, y0 + S * (R() - 0.5) * 0.5);
-        c.lineWidth = Math.max(0.6, S * 0.012); c.strokeStyle = "rgba(255,255,255,.08)"; c.stroke();
+        c.lineWidth = Math.max(0.6, S * 0.012); c.strokeStyle = "rgba(70,66,84,.16)"; c.stroke();
       }
     } else if (style === "marble") {
-      blobs(c, S, P, R, 3, [255, 255, 255], [190, 180, 165], 0.25);
+      blobs(c, S, P, R, 3, [70, 66, 90], [0, 0, 0], 0.3);
       for (let k = 0; k < 2; k++) {
         c.beginPath(); const x0 = P + S * R();
         c.moveTo(x0, P); c.bezierCurveTo(x0 + S * (R() - 0.5), P + S * 0.35, x0 + S * (R() - 0.5), P + S * 0.65, x0 + S * (R() - 0.5) * 0.8, P + S);
-        c.lineWidth = S * (0.012 + R() * 0.015); c.strokeStyle = "rgba(120,108,96,.32)"; c.stroke();
-        c.lineWidth = S * 0.05; c.strokeStyle = "rgba(150,138,124,.08)"; c.stroke();
+        c.lineWidth = S * (0.008 + R() * 0.01); c.strokeStyle = "rgba(190,186,210,.14)"; c.stroke();
       }
     } else if (style === "matte") {
       blobs(c, S, P, R, 3, shade(base, 0.2), shade(base, -0.2), 0.18);
     }
     c.restore();
 
-    grain(c, S, P, style === "slate" ? 22 : style === "marble" ? 5 : 7, v * 53 + S + base[0], style === "slate");
+    grain(c, S, P, style === "slate" ? 16 : style === "marble" ? 4 : 7, v * 53 + S + base[0], style === "slate");
 
     if (style === "slate") {
-      bevel(c, S, P, v, 0.26, 0.55, 0.07);
-      dropShadow(c, S, P, v, "rgba(0,0,0,.65)", 0.08, 0.07);
+      bevel(c, S, P, v, 0.45, 0.4, 0.07);
+      dropShadow(c, S, P, v, "rgba(0,0,0,.6)", 0.08, 0.07);
     } else if (style === "marble") {
-      bevel(c, S, P, v, 0.6, 0.35, 0.06);
+      bevel(c, S, P, v, 0.35, 0.6, 0.06);
       c.save(); stonePath(c, v, P, P, S); c.clip();
       const gl = c.createLinearGradient(P, P, P + S, P + S);
-      gl.addColorStop(0, "rgba(255,255,255,.35)"); gl.addColorStop(0.3, "rgba(255,255,255,0)");
+      gl.addColorStop(0, "rgba(255,255,255,.16)"); gl.addColorStop(0.35, "rgba(255,255,255,0)");
       c.fillStyle = gl; c.fillRect(P, P, S, S); c.restore();
       dropShadow(c, S, P, v, "rgba(0,0,0,.6)", 0.08, 0.07);
     } else {
@@ -1080,7 +1079,12 @@
     c.font = NUM.weight + " " + Math.round(S * NUM.size) + "px " + NUM.family;
     c.textAlign = "center"; c.textBaseline = "middle";
     const gold = (a, b, m) => { const g = c.createLinearGradient(0, cy - S * 0.24, 0, cy + S * 0.24); g.addColorStop(0, a); g.addColorStop(0.5, m); g.addColorStop(1, b); return g; };
-    if (kind === "stone" || kind === "hole" || kind === "bad") {
+    if (kind === "stone") {
+      c.fillStyle = "rgba(255,255,255,.55)"; c.fillText(d, cx, cy + e);        // Lichtkante unten im Schnitt
+      c.fillStyle = "rgba(0,0,0,.28)"; c.fillText(d, cx, cy - e * 0.8);         // Schatten oben
+      c.lineJoin = "round"; c.lineWidth = S * 0.012; c.strokeStyle = "rgba(14,12,22,.8)"; c.strokeText(d, cx, cy);
+      c.fillStyle = gold("#2a2836", "#0c0a14", "#1a1824"); c.fillText(d, cx, cy);
+    } else if (kind === "hole" || kind === "bad" || kind === "marble") {
       c.fillStyle = "rgba(0,0,0,.7)"; c.fillText(d, cx, cy - e);            // Schatten oben im Schnitt
       c.fillStyle = "rgba(255,255,255,.2)"; c.fillText(d, cx, cy + e);       // Lichtkante unten
       c.fillStyle = kind === "bad" ? gold("#ffd6d0", "#e0685c", "#ff9a8e") : gold("#ffffff", "#bfc3d4", "#eceef6");  // Platin
@@ -1095,10 +1099,6 @@
       c.lineJoin = "round"; c.lineWidth = S * 0.03; c.strokeStyle = "rgba(255,255,255,.35)"; c.strokeText(d, cx, cy);
       c.fillStyle = "rgba(255,255,255,.55)"; c.fillText(d, cx, cy + e);
       c.fillStyle = "rgba(34,30,44,.85)"; c.fillText(d, cx, cy);
-    } else { // Marmor
-      c.fillStyle = "rgba(255,255,255,.7)"; c.fillText(d, cx, cy + e);
-      c.fillStyle = "rgba(0,0,0,.35)"; c.fillText(d, cx, cy - e * 0.8);
-      c.fillStyle = gold("#4a4a58", "#1e1e28", "#33333f"); c.fillText(d, cx, cy);
     }
     numCache.set(key, cv);
     return cv;
@@ -1109,6 +1109,7 @@
     const q0 = Math.max(0, q - 1), q1 = Math.min(W - 1, q + 1), r0 = Math.max(0, r - 1), r1 = Math.min(H - 1, r + 1);
     const pad = s * 0.12;
     rr(bctx, L.xs[q0] - pad, L.ys[r0] - pad, L.xs[q1] + s - L.xs[q0] + pad * 2, L.ys[r1] + s - L.ys[r0] + pad * 2, s * 0.3);
+    bctx.strokeStyle = "rgba(10,8,20,.55)"; bctx.lineWidth = s * w + 3; bctx.stroke();
     bctx.strokeStyle = color; bctx.lineWidth = s * w; bctx.stroke();
   }
   function cellFrame(i, color, w, dashed) {
@@ -1368,7 +1369,7 @@
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
       <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>.</p>
       <p><b>Gedrückt halten</b> auf einer Zahl legt ihren Block automatisch, sobald er feststeht. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
-      <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> bleibt alles elfenbeinfarben, bis das Bild fertig ist, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
+      <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
     demo(el.querySelector("canvas"));
     $("#hClose").onclick = () => { AU.init(); AU.ui(); closeSheet(); };
