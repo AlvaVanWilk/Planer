@@ -148,6 +148,15 @@
     for (let k = 0; k < 4; k++) { const a = p[k], b = p[(k + 1) % 4]; P.arcTo(a[0], a[1], b[0], b[1], 0.13); }
     P.closePath(); UNIT.push(P);
   }
+  // Form der Edelsteine (stärker gerundet, leicht eingerückt) für den Lichtglanz
+  const GEMUNIT = [];
+  for (let v = 0; v < NV; v++) {
+    const P = new Path2D(), ins = 0.02, p = CORNERS[v].map(([u, w]) => [ins + u * (1 - 2 * ins), ins + w * (1 - 2 * ins)]);
+    const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], s0 = m(p[3], p[0]);
+    P.moveTo(s0[0], s0[1]);
+    for (let k = 0; k < 4; k++) { const a = p[k], b = p[(k + 1) % 4]; P.arcTo(a[0], a[1], b[0], b[1], 0.17); }
+    P.closePath(); GEMUNIT.push(P);
+  }
 
   function sprite(style, color, S, v = 0) {
     S = Math.max(4, Math.round(S)); v = v % NV;
@@ -988,7 +997,7 @@
     }
     return busy;
   }
-  /* Zahlen: in Schiefer graviert und mit Blattgold gefüllt, ins Glas geätzt, in Marmor gemeißelt */
+  /* Zahlen: in Schiefer graviert und platinweiß ausgelegt, ins Glas geätzt, in Marmor gemeißelt */
   const numCache = new Map();
   const NUM = { family: '"Poiret One", "Avenir Next", "Helvetica Neue", sans-serif', weight: 400, size: 0.64 };
   function numSprite(k, kind, S) {
@@ -1005,11 +1014,8 @@
     if (kind === "stone" || kind === "hole" || kind === "bad") {
       c.fillStyle = "rgba(0,0,0,.7)"; c.fillText(d, cx, cy - e);            // Schatten oben im Schnitt
       c.fillStyle = "rgba(255,255,255,.2)"; c.fillText(d, cx, cy + e);       // Lichtkante unten
-      c.fillStyle = kind === "bad" ? gold("#ffd2c4", "#b4432f", "#ef7a5f") : gold("#fff4cf", "#a8722a", "#e6bb62");
+      c.fillStyle = kind === "bad" ? gold("#ffd6d0", "#e0685c", "#ff9a8e") : gold("#ffffff", "#bfc3d4", "#eceef6");  // Platin
       c.fillText(d, cx, cy);
-      c.save(); c.globalCompositeOperation = "source-atop";                 // feiner Glanz auf dem Gold
-      const sh = c.createLinearGradient(0, 0, S, S); sh.addColorStop(0.3, "rgba(255,255,255,0)"); sh.addColorStop(0.45, "rgba(255,255,255,.35)"); sh.addColorStop(0.6, "rgba(255,255,255,0)");
-      c.fillStyle = sh; c.fillRect(0, 0, S, S); c.restore();
       if (kind === "hole") { c.globalCompositeOperation = "destination-in"; c.fillStyle = "rgba(0,0,0,.72)"; c.fillRect(0, 0, S, S); }
     } else if (kind === "gem") {
       c.lineJoin = "round"; c.lineWidth = S * 0.035; c.strokeStyle = "rgba(0,0,0,.28)"; c.strokeText(d, cx, cy + e * 0.6);
@@ -1019,11 +1025,11 @@
     } else if (kind === "gemL") {
       c.lineJoin = "round"; c.lineWidth = S * 0.03; c.strokeStyle = "rgba(255,255,255,.35)"; c.strokeText(d, cx, cy);
       c.fillStyle = "rgba(255,255,255,.55)"; c.fillText(d, cx, cy + e);
-      c.fillStyle = "rgba(60,36,10,.88)"; c.fillText(d, cx, cy);
+      c.fillStyle = "rgba(34,30,44,.85)"; c.fillText(d, cx, cy);
     } else { // Marmor
       c.fillStyle = "rgba(255,255,255,.7)"; c.fillText(d, cx, cy + e);
       c.fillStyle = "rgba(0,0,0,.35)"; c.fillText(d, cx, cy - e * 0.8);
-      c.fillStyle = gold("#5a4a3a", "#2a2018", "#3e3226"); c.fillText(d, cx, cy);
+      c.fillStyle = gold("#4a4a58", "#1e1e28", "#33333f"); c.fillText(d, cx, cy);
     }
     numCache.set(key, cv);
     return cv;
@@ -1058,7 +1064,7 @@
     if (tg < dur) {
       const g = tg / dur, pos = -0.35 + 1.7 * ease(g), a = 0.38 * Math.sin(g * Math.PI) * k;
       flare = Math.max(0, 1 - Math.abs(pos - 0.3) * 3.2);
-      c.save(); c.translate(x, y); c.scale(s, s); c.clip(UNIT[G.pic.vr[i]]);
+      c.save(); c.translate(x, y); c.scale(s, s); c.clip(GEMUNIT[G.pic.vr[i]]);
       const gr = c.createLinearGradient(pos - 0.35, pos - 0.35, pos + 0.35, pos + 0.35);
       gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, "rgba(255,255,255," + a + ")"); gr.addColorStop(1, "rgba(255,255,255,0)");
       c.globalCompositeOperation = "lighter"; c.fillStyle = gr; c.fillRect(0, 0, 1, 1);
