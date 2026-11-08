@@ -20,7 +20,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 html, body {
-  margin: 0; height: 100%; overflow: hidden; background: var(--deep); color: var(--ink);
+  margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--deep); color: var(--ink);
   font-family: var(--ui); font-weight: 300; -webkit-user-select: none; user-select: none;
   -webkit-touch-callout: none; overscroll-behavior: none; -webkit-text-size-adjust: 100%;
 }
@@ -111,8 +111,8 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .gprog { width: 96px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
 .gprog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--wc), var(--gold2)); transition: width .4s cubic-bezier(.2,.8,.2,1); }
 .gmain { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-#boardWrap { flex: 1; min-height: 0; position: relative; display: grid; place-items: center; touch-action: none; }
-#board { display: block; touch-action: none; border-radius: 18px; }
+#boardWrap { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: hidden; touch-action: none; }
+#board { position: absolute; display: block; touch-action: none; border-radius: 18px; }
 .tools { flex: none; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 0 14px; }
 .seg { display: flex; padding: 5px; gap: 5px; border-radius: 22px; background: rgba(0,0,0,.28); border: 1px solid var(--line); }
 .seg button { display: flex; align-items: center; gap: 9px; height: 54px; padding: 0 22px; border-radius: 17px; font-size: 16px; font-weight: 400; color: var(--muted);
@@ -209,7 +209,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .view p { text-wrap: balance; }
 .danger { color: var(--rose); }
 
-#fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 15; }
+#fx { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 15; }
 
 @media (max-width: 520px) {
   .seg button { padding: 0 16px; font-size: 15px; }
