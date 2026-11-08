@@ -1685,7 +1685,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       return;
     }
 
-    if (style === "glass") { paintGlass(c, S, P, parseCol(color), v); return; }
+    if (style === "glass" || style === "gem") { paintGlass(c, S, P, parseCol(color), v, style === "glass"); return; }
     let base;
     if (style === "slate") { const d = (R() - 0.5) * 12; base = [66 + d, 62 + d, 76 + d * 1.2]; }
     else if (style === "marble") base = [234, 226, 210];
@@ -1738,7 +1738,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   }
 
   // Edelstein-Schliff: leuchtende Tafel, zwölf Facetten, Schliffkanten, Feuer, farbiger Schein
-  function paintGlass(c, S, P, base, v) {
+  function paintGlass(c, S, P, base, v, stars = true) {
     const X = f => P + S * f, R = srng(v * 131 + Math.round(base[0] * 3 + base[1] * 5 + base[2] * 7));
     // farbiger Lichtschein auf dem Mörtel und kurzer Kontaktschatten
     c.save();
@@ -1806,8 +1806,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       c.beginPath(); c.arc(0, 0, r * 0.22, 0, 7); c.fillStyle = "rgba(255,255,255,.95)"; c.fill();
       c.restore();
     };
-    star(T[0][0] + S * 0.01, T[0][1] + S * 0.01, S * 0.13, "rgba(200,240,255,.7)");
-    if (R() < 0.6) { const k = Math.floor(R() * 4); star(M[k][0] * 0.6 + T[(k + 1) % 4][0] * 0.4, M[k][1] * 0.6 + T[(k + 1) % 4][1] * 0.4, S * 0.07, R() < 0.5 ? "rgba(255,200,235,.6)" : "rgba(255,240,190,.6)"); }
+    if (stars) star(T[0][0] + S * 0.01, T[0][1] + S * 0.01, S * 0.13, "rgba(200,240,255,.7)");
+    if (stars && R() < 0.6) { const k = Math.floor(R() * 4); star(M[k][0] * 0.6 + T[(k + 1) % 4][0] * 0.4, M[k][1] * 0.6 + T[(k + 1) % 4][1] * 0.4, S * 0.07, R() < 0.5 ? "rgba(255,200,235,.6)" : "rgba(255,240,190,.6)"); }
     // feine Kontur
     c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.65), 0.6);
     stonePath(c, v, P, P, S, 0, 0.16); c.stroke();
@@ -2346,9 +2346,6 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4600;
     const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
-    const fontPx = Math.round(s * 0.5);
-    c.font = "500 " + fontPx + "px Lexend, -apple-system, sans-serif";
-    c.textAlign = "center"; c.textBaseline = "middle";
     const put = (img, x, y, sc = 1, alpha = 1, sx = sc) => {
       if (alpha <= 0.002 || sx <= 0.01) return;
       c.globalAlpha = Math.min(1, alpha);
@@ -2362,7 +2359,9 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       c.save(); c.translate(x + (s - w) / 2, y + (s - h) / 2); c.scale(w, h);
       c.globalAlpha = Math.min(1, alpha); c.fillStyle = color; c.fill(UNIT[vv]); c.restore();
     };
-    const filledLook = i => G.zauber ? sprite("glass", col[i], S, pic.vr[i]) : sprite("marble", "", S, pic.vr[i]);
+    const filledLook = i => G.zauber ? sprite("gem", col[i], S, pic.vr[i]) : sprite("marble", "", S, pic.vr[i]);
+    const ambient = !REDUCE;
+    let gems = 0;
     const holeLook = i => sprite(clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? col[i] : "", S, pic.vr[i]);
     for (let r = 0; r < H; r++) for (let q = 0; q < W; q++) {
       const i = r * W + q, x0 = L.xs[q], y = L.ys[r], vv = pic.vr[i];
@@ -2382,7 +2381,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         const p = clamp((rt - R.d[i]) / 560);
         if (sol[i]) {
           if (!G.zauber) put(sprite("marble", "", S, vv), x, y, 1, 1 - p);
-          put(sprite("glass", col[i], S, vv), x, y, 1, G.zauber ? 1 : p);
+          put(sprite("gem", col[i], S, vv), x, y, 1, G.zauber ? 1 : p);
+          if (ambient) { sparkle(c, i, x, y, s, t, G.zauber ? 1 : p); gems++; }
         } else {
           put(v === 0 ? holeLook(i) : sprite("slate", "", S, vv), x, y, 1, 1 - p);
           put(sprite("matte", col[i], S, vv), x, y, 0.6 + 0.4 * ease(p), p);
@@ -2400,27 +2400,23 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         put(holeLook(i), x, y, 1);
         put(sprite("slate", "", S, vv), x, y, 0.8 + 0.2 * ease(ap), ease(ap));
       } else if (v < 0) put(sprite("slate", "", S, vv), x, y);
-      else if (v === 1) put(filledLook(i), x, y);
+      else if (v === 1) { put(filledLook(i), x, y); if (G.zauber && ambient) { sparkle(c, i, x, y, s, t, 1); gems++; } }
       else put(holeLook(i), x, y);
       if (red > 0) over(x, y, vv, "#e0605a", red * 0.4);
       // Zahl
       const k = clues[i];
       if (k >= 0 && numA > 0) {
-        let fill, sh = "rgba(0,0,0,.55)";
-        if (v === 1) {
-          if (G.zauber) { const light = lum(pic.rgbs[i]) > 0.6; fill = light ? "#1c1626" : "#ffffff"; sh = light ? "rgba(255,255,255,.35)" : "rgba(0,0,0,.5)"; }
-          else { fill = "#2a2234"; sh = "rgba(255,255,255,.5)"; }
-        } else fill = v === 0 ? "#bdb5cc" : "#f4eee4";
+        let kind = v === 1 ? (G.zauber ? (lum(pic.rgbs[i]) > 0.62 ? "gemL" : "gem") : "marble") : v === 0 ? "hole" : "stone";
         let alpha = numA;
         const cs = G.cs[i];
-        if (cs === 1) { const p = clamp((t - G.ct[i]) / 600); alpha *= 1 - 0.68 * p; if (p < 1) busy = true; }
-        if (cs === 2) fill = "#ff8f86";
-        const tx = x + s / 2, ty = y + s / 2 + s * 0.03;
-        c.globalAlpha = alpha * 0.9; c.fillStyle = sh; c.fillText(String(k), tx, ty + Math.max(1, s * 0.035));
-        c.globalAlpha = alpha; c.fillStyle = fill; c.fillText(String(k), tx, ty);
+        if (cs === 1) { const p = clamp((t - G.ct[i]) / 600); alpha *= 1 - 0.66 * p; if (p < 1) busy = true; }
+        if (cs === 2) kind = "bad";
+        c.globalAlpha = alpha;
+        c.drawImage(numSprite(k, kind, S), x, y, s, s);
         c.globalAlpha = 1;
       }
     }
+    G.gems = gems;
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
     // Tipp
@@ -2445,6 +2441,93 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     }
     return busy;
   }
+  /* Zahlen: in Schiefer graviert und mit Blattgold gefüllt, ins Glas geätzt, in Marmor gemeißelt */
+  const numCache = new Map();
+  const NUMFONT = '"Gloock", "Iowan Old Style", "Palatino Linotype", Georgia, serif';
+  function numSprite(k, kind, S) {
+    S = Math.max(8, Math.round(S));
+    const key = k + kind + S;
+    let cv = numCache.get(key);
+    if (cv) return cv;
+    if (numCache.size > 200) numCache.clear();
+    cv = document.createElement("canvas"); cv.width = cv.height = S;
+    const c = cv.getContext("2d"), d = String(k), cx = S / 2, cy = S * 0.535, e = Math.max(1, S * 0.022);
+    c.font = "400 " + Math.round(S * 0.6) + "px " + NUMFONT;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    const gold = (a, b, m) => { const g = c.createLinearGradient(0, cy - S * 0.24, 0, cy + S * 0.24); g.addColorStop(0, a); g.addColorStop(0.5, m); g.addColorStop(1, b); return g; };
+    if (kind === "stone" || kind === "hole" || kind === "bad") {
+      c.fillStyle = "rgba(0,0,0,.7)"; c.fillText(d, cx, cy - e);            // Schatten oben im Schnitt
+      c.fillStyle = "rgba(255,255,255,.2)"; c.fillText(d, cx, cy + e);       // Lichtkante unten
+      c.fillStyle = kind === "bad" ? gold("#ffd2c4", "#b4432f", "#ef7a5f") : gold("#fff4cf", "#a8722a", "#e6bb62");
+      c.fillText(d, cx, cy);
+      c.save(); c.globalCompositeOperation = "source-atop";                 // feiner Glanz auf dem Gold
+      const sh = c.createLinearGradient(0, 0, S, S); sh.addColorStop(0.3, "rgba(255,255,255,0)"); sh.addColorStop(0.45, "rgba(255,255,255,.35)"); sh.addColorStop(0.6, "rgba(255,255,255,0)");
+      c.fillStyle = sh; c.fillRect(0, 0, S, S); c.restore();
+      if (kind === "hole") { c.globalCompositeOperation = "destination-in"; c.fillStyle = "rgba(0,0,0,.72)"; c.fillRect(0, 0, S, S); }
+    } else if (kind === "gem") {
+      c.fillStyle = "rgba(0,0,0,.38)"; c.fillText(d, cx, cy + e * 1.2);
+      const g = c.createLinearGradient(0, cy - S * 0.24, 0, cy + S * 0.24); g.addColorStop(0, "rgba(255,255,255,.98)"); g.addColorStop(1, "rgba(255,255,255,.78)");
+      c.fillStyle = g; c.fillText(d, cx, cy);
+    } else if (kind === "gemL") {
+      c.fillStyle = "rgba(255,255,255,.55)"; c.fillText(d, cx, cy + e);
+      c.fillStyle = "rgba(60,36,10,.88)"; c.fillText(d, cx, cy);
+    } else { // Marmor
+      c.fillStyle = "rgba(255,255,255,.7)"; c.fillText(d, cx, cy + e);
+      c.fillStyle = "rgba(0,0,0,.35)"; c.fillText(d, cx, cy - e * 0.8);
+      c.fillStyle = gold("#5a4a3a", "#2a2018", "#3e3226"); c.fillText(d, cx, cy);
+    }
+    numCache.set(key, cv);
+    return cv;
+  }
+
+  /* Edelsteine leben: ab und zu zieht ein Lichtglanz schräg über einen Stein, die Sterne atmen langsam */
+  let starImg = null;
+  function starSprite() {
+    if (starImg) return starImg;
+    const n = 96, cv = document.createElement("canvas"); cv.width = cv.height = n;
+    const c = cv.getContext("2d"), r = n / 2;
+    const halo = c.createRadialGradient(r, r, 0, r, r, r);
+    halo.addColorStop(0, "rgba(255,255,255,.55)"); halo.addColorStop(0.25, "rgba(220,240,255,.18)"); halo.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = halo; c.fillRect(0, 0, n, n);
+    c.translate(r, r);
+    for (const [len, w, a] of [[r, r * 0.08, 0.95], [r * 0.55, r * 0.05, 0.6]]) {
+      c.save(); if (len < r) c.rotate(Math.PI / 4);
+      const g = c.createRadialGradient(0, 0, 0, 0, 0, len); g.addColorStop(0, "rgba(255,255,255," + a + ")"); g.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = g;
+      c.beginPath(); c.moveTo(0, -len); c.quadraticCurveTo(w, -w, len, 0); c.quadraticCurveTo(w, w, 0, len); c.quadraticCurveTo(-w, w, -len, 0); c.quadraticCurveTo(-w, -w, 0, -len); c.fill();
+      c.restore();
+    }
+    c.beginPath(); c.arc(0, 0, r * 0.07, 0, 7); c.fillStyle = "#fff"; c.fill();
+    starImg = cv; return cv;
+  }
+  function sparkle(c, i, x, y, s, t, k) {
+    const h = Math.imul(i + 11, 2654435761) >>> 0;
+    const period = 11000 + (h % 11000), off = (h >>> 8) % period, ph = ((h >>> 4) % 628) / 100;
+    // Lichtglanz
+    const tg = (t + off) % period, dur = 1400;
+    let flare = 0;
+    if (tg < dur) {
+      const g = tg / dur, pos = -0.35 + 1.7 * ease(g), a = 0.38 * Math.sin(g * Math.PI) * k;
+      flare = Math.max(0, 1 - Math.abs(pos - 0.3) * 3.2);
+      c.save(); c.translate(x, y); c.scale(s, s); c.clip(UNIT[G.pic.vr[i]]);
+      const gr = c.createLinearGradient(pos - 0.35, pos - 0.35, pos + 0.35, pos + 0.35);
+      gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, "rgba(255,255,255," + a + ")"); gr.addColorStop(1, "rgba(255,255,255,0)");
+      c.globalCompositeOperation = "lighter"; c.fillStyle = gr; c.fillRect(0, 0, 1, 1);
+      c.restore();
+    }
+    // atmender Stern
+    const b = 0.5 + 0.5 * Math.sin(t / 1650 + ph);
+    const sz = s * (0.34 + 0.12 * b + 0.22 * flare), al = (0.5 + 0.4 * b + 0.3 * flare) * k;
+    c.globalAlpha = Math.min(1, al);
+    c.drawImage(starSprite(), x + s * 0.29 - sz / 2, y + s * 0.29 - sz / 2, sz, sz);
+    if (h % 5 < 2) { // manche Steine haben einen zweiten, kleineren Stern
+      const b2 = 0.5 + 0.5 * Math.sin(t / 2100 + ph * 1.7), z2 = s * (0.16 + 0.08 * b2);
+      c.globalAlpha = (0.35 + 0.4 * b2) * k;
+      c.drawImage(starSprite(), x + s * 0.7 - z2 / 2, y + s * 0.66 - z2 / 2, z2, z2);
+    }
+    c.globalAlpha = 1;
+  }
+
   function blockFrame(i, color, w) {
     const W = G.pic.W, H = G.pic.H, q = i % W, r = Math.floor(i / W), s = L.s;
     const q0 = Math.max(0, q - 1), q1 = Math.min(W - 1, q + 1), r0 = Math.max(0, r - 1), r1 = Math.min(H - 1, r + 1);
@@ -2528,13 +2611,17 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   /* ---------- Schleife ---------- */
   let raf = 0;
   function kick() { if (!raf) raf = requestAnimationFrame(loop); }
+  let lastBoard = 0, boardBusy = true;
   function loop(t) {
     raf = 0;
     let more = false;
+    if (G && screen === "game" && !boardBusy && G.gems && !REDUCE && !parts.length && t - lastBoard < 33) { kick(); return; }
     if (G && screen === "game") {
       if (!G.done && !document.hidden) { G.elapsed += Math.min(1, (t - G.tick) / 1000); }
       G.tick = t;
-      more = drawBoard(t) || more;
+      lastBoard = t;
+      boardBusy = drawBoard(t);
+      more = boardBusy || (G.gems > 0 && !REDUCE) || more;
     }
     more = drawFx(t) || more;
     if (more) kick();
@@ -2750,7 +2837,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   document.addEventListener("pointerdown", () => AU.init(), { once: true });
   fxSize();
   renderHome();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => kick());
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
+  try { document.fonts && document.fonts.load('400 40px "Gloock"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
   window.__mosaik = { PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
 })();
 </script>
