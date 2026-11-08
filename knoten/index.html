@@ -257,7 +257,7 @@
       <span class="total" id="mTotal"></span>
     </div>
     <div id="chapters"></div>
-    <div class="foot">Ziehe die Enden der Kordeln in freie Ösen,<br>bis sich keine Kordel mehr mit einer anderen kreuzt.<br>Die Uhr läuft ab dem ersten Griff.</div>
+    <div class="foot">Ziehe die Enden der Kordeln in freie Ösen, bis sich keine mehr kreuzen.<br>Wer unten liegt, hängt fest – wer oben liegt, gleitet frei darüber.<br>Löse den Knoten von oben nach unten.</div>
   </div>
 </div>
 
@@ -278,6 +278,7 @@ const eIn = (t) => t * t * t;
 const eBack = (t) => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const now = () => performance.now();
 const range = (n) => Array.from({ length: n }, (_, i) => i);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -314,27 +315,125 @@ function distPtSeg2(p, a, b) {
 function intersect(a, b, c, d) {
   const den = (a.x - b.x) * (c.y - d.y) - (a.y - b.y) * (c.x - d.x);
   const t = ((a.x - c.x) * (c.y - d.y) - (a.y - c.y) * (c.x - d.x)) / den;
-  return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+  return { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y), t };
+}
+function toward(a, b, d) {
+  const L = dist(a, b); if (L < 1e-9) return { x: a.x, y: a.y };
+  return { x: a.x + ((b.x - a.x) / L) * d, y: a.y + ((b.y - a.y) / L) * d };
 }
 
-/* ---------- Kreuzungen zwischen Kordeln (in Rastereinheiten) ---------- */
+/* =====================================================================
+   Knotenlogik
+   Kordeln sind gespannt und gerade. Jede Kreuzung hat ein Oben und ein
+   Unten: Die zuletzt bewegte Kordel liegt oben.
+   Eine Kordel, die UNTER einer anderen liegt, kommt dort nicht heraus –
+   ihr Ende lässt sich nur in Ösen setzen, von denen aus sie die Deckkordel
+   weiterhin kreuzt. Wer oben liegt, gleitet frei: Bewegt man die
+   Deckkordel weg, ist die untere frei.
+   Jeder erlaubte Zug lässt sich genau umkehren – darum ist jedes Level,
+   das aus der Lösung durch erlaubte Züge entsteht, sicher lösbar.
+   ===================================================================== */
 const TOUCH = 0.07 * 0.07;
 function pairHit(A, B, C, D) {
   if (segCross(A, B, C, D)) return 2;
   if (distPtSeg2(C, A, B) < TOUCH || distPtSeg2(D, A, B) < TOUCH || distPtSeg2(A, C, D) < TOUCH || distPtSeg2(B, C, D) < TOUCH) return 1;
   return 0;
 }
-// pos: Array von [P, Q] – die beiden Enden jeder Kordel
-function ropeConflicts(pos, withPoints) {
-  const r = pos.length, per = new Array(r).fill(0), points = withPoints ? [] : null;
-  let count = 0;
-  for (let i = 0; i < r; i++) for (let j = i + 1; j < r; j++) {
-    const h = pairHit(pos[i][0], pos[i][1], pos[j][0], pos[j][1]);
+function hitPoint(A, B, C, D, h) {
+  if (h === 2) return intersect(A, B, C, D);
+  for (const [p, a, b] of [[C, A, B], [D, A, B], [A, C, D], [B, C, D]]) if (distPtSeg2(p, a, b) < TOUCH) return { x: p.x, y: p.y };
+  return { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+}
+function makeModel(def, ends, under, z) {
+  const R = def.r;
+  return { def, R, ends: ends.map((e) => e.slice()), under: under ? Uint8Array.from(under) : new Uint8Array(R * R), z: (z || range(R)).slice() };
+}
+const cloneModel = (m) => ({ def: m.def, R: m.R, ends: m.ends.map((e) => e.slice()), under: m.under.slice(), z: m.z.slice() });
+const snapshot = (m) => ({ ends: m.ends.map((e) => e.slice()), under: Array.from(m.under), z: m.z.slice() });
+const isUnder = (m, a, b) => m.under[a * m.R + b] === 1;
+const segOf = (m, r) => [m.def.P[m.ends[r][0]], m.def.P[m.ends[r][1]]];
+function crossings(m) {
+  const out = [];
+  for (let i = 0; i < m.R; i++) for (let j = i + 1; j < m.R; j++) {
+    const [A, B] = segOf(m, i), [C, D] = segOf(m, j), h = pairHit(A, B, C, D);
     if (!h) continue;
-    count++; per[i]++; per[j]++;
-    if (points) points.push(h === 2 ? intersect(pos[i][0], pos[i][1], pos[j][0], pos[j][1]) : null);
+    const X = hitPoint(A, B, C, D, h);
+    const lo = isUnder(m, i, j) ? i : isUnder(m, j, i) ? j : -1;
+    out.push({ a: i, b: j, x: X.x, y: X.y, under: lo, over: lo < 0 ? -1 : lo === i ? j : i });
   }
-  return { count, per, points };
+  return out;
+}
+const crossCount = (m) => crossings(m).length;
+// Kordeln, unter denen r liegt und die r beim Zug weiter kreuzen muss
+function blockers(m, r, e, Pnew) {
+  const other = m.def.P[m.ends[r][1 - e]], out = [];
+  for (let s = 0; s < m.R; s++) {
+    if (s === r || !isUnder(m, r, s)) continue;
+    const [C, D] = segOf(m, s);
+    if (!pairHit(Pnew, other, C, D)) out.push(s);
+  }
+  return out;
+}
+function occupied(m) { const o = new Set(); m.ends.forEach((e) => { o.add(e[0]); o.add(e[1]); }); return o; }
+function legal(m, r, e, h) {
+  const d = m.def, other = d.P[m.ends[r][1 - e]];
+  if (h === m.ends[r][e]) return false;
+  if (occupied(m).has(h)) return false;
+  if (dist(d.P[h], other) < 0.99) return false;
+  return blockers(m, r, e, d.P[h]).length === 0;
+}
+function applyMove(m, r, e, h) {
+  m.ends[r][e] = h;
+  const [A, B] = segOf(m, r), R = m.R;
+  for (let s = 0; s < R; s++) {
+    if (s === r) continue;
+    const [C, D] = segOf(m, s);
+    if (pairHit(A, B, C, D)) { if (!m.under[r * R + s]) m.under[s * R + r] = 1; }
+    else { m.under[s * R + r] = 0; m.under[r * R + s] = 0; }
+  }
+  m.z = m.z.filter((x) => x !== r); m.z.push(r);
+}
+// Kordeln, die gerade irgendetwas kreuzen
+function tangledSet(m) { const s = new Set(); for (const c of crossings(m)) { s.add(c.a); s.add(c.b); } return s; }
+// Zeichenreihenfolge: was unten liegt, zuerst
+function drawOrder(m) {
+  const R = m.R, zr = {}; m.z.forEach((r, i) => (zr[r] = i));
+  const done = new Set(), order = [];
+  while (order.length < R) {
+    let pick = -1;
+    for (const r of m.z) {
+      if (done.has(r)) continue;
+      let free = true;
+      for (let s = 0; s < R; s++) if (!done.has(s) && s !== r && isUnder(m, s, r)) { free = false; break; }
+      if (free) { pick = r; break; }
+    }
+    if (pick < 0) pick = m.z.find((r) => !done.has(r));
+    done.add(pick); order.push(pick);
+  }
+  return order;
+}
+function allMoves(m) {
+  const d = m.def, occ = occupied(m), out = [];
+  for (let r = 0; r < m.R; r++) for (let e = 0; e < 2; e++) {
+    const other = d.P[m.ends[r][1 - e]];
+    for (let h = 0; h < d.cells; h++) {
+      if (occ.has(h) || dist(d.P[h], other) < 0.99) continue;
+      if (blockers(m, r, e, d.P[h]).length) continue;
+      out.push({ r, e, h });
+    }
+  }
+  return out;
+}
+// bester nächster Zug (für den Tipp): wenigste Kreuzungen, bei Gleichstand freie Kordeln bevorzugt
+function bestMove(m) {
+  let best = null, bc = Infinity;
+  for (const mv of allMoves(m)) {
+    const c = cloneModel(m); applyMove(c, mv.r, mv.e, mv.h);
+    let freeBonus = 0; for (let s = 0; s < m.R; s++) if (isUnder(m, mv.r, s)) freeBonus += 0.1;
+    const sc = crossCount(c) + freeBonus;
+    if (sc < bc) { bc = sc; best = { ...mv, after: crossCount(c) }; }
+  }
+  return best;
 }
 
 /* =====================================================================
@@ -354,29 +453,24 @@ const ROMAN = ["", " II", " III", " IV", " V", " VI", " VII", " VIII", " IX", " 
 const chapterIdx = (lvl) => Math.floor((lvl - 1) / 10);
 const chapterOf = (lvl) => CHAPTERS[chapterIdx(lvl) % CHAPTERS.length];
 const chapterName = (lvl) => chapterOf(lvl).name + (ROMAN[Math.floor(chapterIdx(lvl) / CHAPTERS.length)] || "");
-
 const GOLD_HI = hex("#f6e4bb");
 const ASH = hex("#7d766d");
 
 /* =====================================================================
-   Level-Erzeugung
-   1. kreuzungsfreie Lösung auf dem Ösenraster
-   2. mit echten Zügen verwirren (Enden in freie Ösen) – also garantiert lösbar
+   Level-Erzeugung: kreuzungsfreie Lösung, dann mit erlaubten Zügen verknotet
    ===================================================================== */
 const defCache = new Map();
 function levelDef(level) {
   if (defCache.has(level)) return defCache.get(level);
   const L = level;
-  const [cols, rows] = L <= 8 ? [4, 5] : L <= 20 ? [4, 6] : L <= 40 ? [5, 6] : [5, 7];
-  const cells = cols * rows, emptyMin = Math.max(3, Math.ceil(cells * 0.2));
+  const [cols, rows] = L <= 6 ? [4, 5] : L <= 18 ? [4, 6] : L <= 36 ? [5, 6] : [5, 7];
+  const cells = cols * rows, emptyMin = Math.max(3, Math.ceil(cells * 0.22));
   const r = Math.min(Math.floor((cells - emptyMin) / 2), 3 + Math.floor((L - 1) / 3));
   const P = range(cells).map((h) => ({ x: h % cols, y: Math.floor(h / cols) }));
-  const rng = mulberry32(((level * 2654435761) ^ 0x6a09e667) >>> 0);
+  const rng = mulberry32(((level * 2654435761) ^ 0x3c6ef372) >>> 0);
   const ri = (n) => Math.floor(rng() * n);
-  const dist = (a, b) => Math.hypot(P[a].x - P[b].x, P[a].y - P[b].y);
   const maxLen = Math.min(3.7, 2.3 + L * 0.02);
-  const countOf = (ends) => ropeConflicts(ends.map(([a, b]) => [P[a], P[b]]), false).count;
-
+  const def = { cols, rows, cells, r, P };
   // 1. Lösung
   let sol = null;
   for (let att = 0; att < 300 && !sol; att++) {
@@ -384,42 +478,39 @@ function levelDef(level) {
     for (let tries = 0; tries < 3000 && ends.length < r; tries++) {
       const a = ri(cells), b = ri(cells);
       if (a === b || occ.has(a) || occ.has(b)) continue;
-      const d = dist(a, b); if (d < 0.99 || d > maxLen) continue;
+      const d = dist(P[a], P[b]); if (d < 0.99 || d > maxLen) continue;
       if (ends.some(([c, e]) => pairHit(P[a], P[b], P[c], P[e]))) continue;
       ends.push([a, b]); occ.add(a); occ.add(b);
     }
     if (ends.length === r) sol = ends;
   }
-  // 2. Verwirren
-  const ends = sol.map((e) => e.slice());
-  const occ = new Int16Array(cells).fill(-1);
-  ends.forEach(([a, b], i) => { occ[a] = i * 2; occ[b] = i * 2 + 1; });
-  const S = 2 + Math.floor(r * 0.9) + Math.floor(L / 20);
-  const minC = Math.max(1, Math.round(r * 0.75));
+  def.sol = sol;
+  // 2. Verknoten – nur erlaubte Züge, also rückwärts sicher lösbar
+  const m = makeModel(def, sol, null, shuffle(range(r), rng));
+  const S = 2 + Math.floor(r * 0.9) + Math.floor(L / 12);
+  const minC = Math.max(2, Math.round(r * 0.9));
   let last = -1, moves = 0;
-  for (let k = 0; k < S * 4; k++) {
-    if (moves >= S && countOf(ends) >= minC) break;
-    const empties = range(cells).filter((h) => occ[h] < 0);
-    let best = null, bs = -1;
-    for (let s = 0; s < 16; s++) {
-      const rp = ri(r), ei = rng() < 0.5 ? 0 : 1, key = rp * 2 + ei;
-      if (key === last) continue;
-      const h = empties[ri(empties.length)], other = ends[rp][1 - ei];
-      if (dist(h, other) < 0.99) continue;
-      const old = ends[rp][ei]; ends[rp][ei] = h;
-      const sc = countOf(ends) + rng() * 1.5;
-      ends[rp][ei] = old;
-      if (sc > bs) { bs = sc; best = { rp, ei, h, key }; }
+  for (let k = 0; k < S * 4 && (moves < S || crossCount(m) < minC); k++) {
+    const opts = allMoves(m).filter((mv) => mv.r !== last);
+    if (!opts.length) break;
+    let best = null, bs = -Infinity;
+    for (let s = 0; s < 14; s++) {
+      const mv = opts[ri(opts.length)];
+      const c = cloneModel(m); applyMove(c, mv.r, mv.e, mv.h);
+      // viele Kreuzungen, und möglichst viele Kordeln, die unter anderen festhängen
+      let pinned = 0; for (let a = 0; a < r; a++) for (let b = 0; b < r; b++) if (isUnder(c, a, b)) { pinned++; break; }
+      // Kreuzungen nur bis zu einer Obergrenze belohnen – Schwierigkeit kommt vom Festhängen
+      const sc = Math.min(crossCount(c), Math.round(r * 2)) + pinned * 1.2 + rng() * 1.5;
+      if (sc > bs) { bs = sc; best = mv; }
     }
-    if (!best) continue;
-    occ[ends[best.rp][best.ei]] = -1; ends[best.rp][best.ei] = best.h; occ[best.h] = best.rp * 2 + best.ei;
-    last = best.key; moves++;
+    applyMove(m, best.r, best.e, best.h); last = best.r; moves++;
   }
-  const base = 20 + 6 * moves + 4 * r, factor = Math.max(0.7, 1 - (L - 1) * 0.004);
-  const time = Math.max(30, Math.round((base * factor) / 5) * 5);
+  def.start = snapshot(m);
+  def.moves = moves;
+  const base = 25 + 8 * moves + 3 * r, factor = Math.max(0.7, 1 - (L - 1) * 0.004);
+  def.time = Math.max(40, Math.round((base * factor) / 5) * 5);
   const pal = chapterOf(level).cords;
-  const colorIdx = shuffle(range(r), rng).map((i) => i % pal.length);
-  const def = { cols, rows, cells, r, P, sol, start: ends, time, moves, colors: colorIdx.map((i) => pal[i]), z: shuffle(range(r), rng) };
+  def.colors = shuffle(range(r), rng).map((i) => pal[i % pal.length]);
   defCache.set(level, def);
   return def;
 }
@@ -428,13 +519,13 @@ const starsFor = (left, total) => (left >= total * 0.5 ? 3 : left >= total * 0.2
 /* =====================================================================
    Speicher
    ===================================================================== */
-const STORE = "knoten:v3";
+const STORE = "knoten:v5";
 let save = { unlocked: 1, solved: {}, cur: null, sound: true, vib: true, tips: {} };
 try {
   const s = JSON.parse(localStorage.getItem(STORE) || "null");
   if (s) save = Object.assign(save, s);
   else {
-    const old = JSON.parse(localStorage.getItem("knoten:v2") || localStorage.getItem("knoten:v1") || "null");
+    const old = JSON.parse(localStorage.getItem("knoten:v4") || localStorage.getItem("knoten:v3") || "null");
     if (old) { save.sound = old.sound !== false; save.vib = old.vib !== false; }
   }
 } catch (e) {}
@@ -472,9 +563,9 @@ const Sound = {
     const fl = c.createBiquadFilter(); fl.type = "lowpass";
     fl.frequency.setValueAtTime(br, t0); fl.frequency.exponentialRampToValueAtTime(Math.max(180, br * 0.22), t0 + dur);
     const parts = [[1, "triangle", 1], [2.003, "sine", 0.32], [3.01, "sine", 0.1], [4.2, "sine", o.bell ? 0.06 : 0]];
-    for (const [m, type, a] of parts) {
+    for (const [mm, type, a] of parts) {
       if (!a) continue;
-      const os = c.createOscillator(); os.type = type; os.frequency.value = f * m;
+      const os = c.createOscillator(); os.type = type; os.frequency.value = f * mm;
       const og = c.createGain(); og.gain.value = a; os.connect(og); og.connect(fl);
       os.start(t0); os.stop(t0 + dur + 0.05);
     }
@@ -493,14 +584,13 @@ const Sound = {
       os.start(t0); os.stop(t0 + dur + 0.1);
     }
   },
-  // D-Dur-Pentatonik – lange Kordeln klingen tief, kurze hoch
   SCALE: [146.83, 164.81, 185, 220, 246.94, 293.66, 329.63, 369.99, 440, 493.88, 587.33, 659.25, 739.99, 880],
   noteFor(len) { return this.SCALE[clamp(Math.round(((4.2 - len) / 3.4) * (this.SCALE.length - 1)), 0, this.SCALE.length - 1)]; },
   pluck(len, t, vol) { this.tone(this.noteFor(len) * 2, { t: t || 0, dur: 2.2, vol: vol || 0.11, bright: 3800, bell: true, att: 0.003 }); },
   pick() { this.tone(220, { dur: 0.2, vol: 0.05, bright: 1100, rev: 0.25 }); },
   seat() { this.tone(392, { dur: 0.25, vol: 0.05, bright: 1600, rev: 0.3 }); this.tone(196, { dur: 0.3, vol: 0.04, bright: 700, rev: 0.2 }); },
   back() { this.tone(196, { dur: 0.3, vol: 0.035, bright: 800, rev: 0.2 }); },
-  worse() { const t = now(); if (t - this.last < 120) return; this.last = t; this.tone(130.81, { dur: 0.45, vol: 0.045, bright: 600, rev: 0.3 }); },
+  snag() { const t = now(); if (t - this.last < 160) return; this.last = t; this.tone(123.47, { dur: 0.5, vol: 0.05, bright: 500, rev: 0.25 }); },
   tick() { this.tone(1567.98, { dur: 0.08, vol: 0.03, bright: 4000, rev: 0.1 }); },
   win() { this.pad([146.83, 220, 293.66, 369.99], 0.05, 4.5, 0.022); },
   star(i) { this.tone([1174.66, 1318.5, 1760][i], { dur: 1.8, vol: 0.06, bright: 6000, bell: true, rev: 0.9 }); },
@@ -541,7 +631,6 @@ function makeGlow(inner, outer) {
   return cv;
 }
 function makeHole(r) {
-  // Messingöse, in den Grund eingelassen
   const size = Math.ceil(r * 2 + 8), cv = document.createElement("canvas");
   cv.width = cv.height = Math.ceil(size * DPR);
   const g = cv.getContext("2d"); g.scale(DPR, DPR);
@@ -594,7 +683,6 @@ function layoutBoard() {
   RW = clamp(SP * 0.13, 7, 15); HOLE = RW * 1.45; PEG = RW * 1.02;
   buildSprites();
 }
-// Rasterkoordinaten -> Welt (px relativ zur Spielfläche); im Querformat gedreht
 function g2w(gx, gy) {
   const d = state.def;
   const x = LAND ? gy : gx, y = LAND ? d.cols - 1 - gx : gy;
@@ -606,6 +694,7 @@ function w2g(wx, wy) {
 }
 const toScreen = (x, y) => ({ x: cam.ox + x * cam.s, y: cam.oy + y * cam.s });
 const toWorld = (x, y) => ({ x: (x - cam.ox) / cam.s, y: (y - cam.oy) / cam.s });
+const g2s = (p) => { const w = g2w(p.x, p.y); return toScreen(w.x, w.y); };
 function camTo(s, ox, oy, dur) {
   if (!dur) { cam.s = s; cam.ox = ox; cam.oy = oy; cam.tw = null; return; }
   cam.tw = { f: { s: cam.s, ox: cam.ox, oy: cam.oy }, t: { s, ox, oy }, t0: now(), dur };
@@ -627,45 +716,28 @@ function resize() {
    Spielzustand
    ===================================================================== */
 const state = {
-  level: 1, def: null, ropes: [], occ: null, z: [],
-  conf: { count: 0, per: [], points: [] },
+  level: 1, def: null, M: null, look: [],
   phase: "play", moves: 0, timeLeft: 60, started: false, paused: false,
-  undo: [], flashes: [], particles: [], rings: [], hint: null,
+  undo: [], flashes: [], particles: [], rings: [], hint: null, tangled: new Set(), blockedFx: [],
   win: null, lost: null, outro: null, lastTick: 0, lowSec: -1, lastSave: 0,
 };
-let drag = null; // { pid, rope, end, x, y, dx, dy, target, from }
+let drag = null; // { pid, r, e, x, y, dx, dy, target, legal, block }
 
-// aktuelle Lage eines Endes in Rasterkoordinaten (das gezogene Ende folgt dem Finger)
-function endGrid(r, e) {
-  if (drag && drag.rope === r && drag.end === e) {
-    const w = toWorld(drag.x + drag.dx, drag.y + drag.dy);
-    return w2g(w.x, w.y);
-  }
-  return state.def.P[state.ropes[r].e[e]];
-}
-function livePositions() { return state.ropes.map((_, r) => [endGrid(r, 0), endGrid(r, 1)]); }
-function recompute(fx) {
-  const prev = state.conf;
-  const c = ropeConflicts(livePositions(), true);
-  if (fx && prev.per.length === c.per.length) {
+function afterChange(fx) {
+  const now2 = tangledSet(state.M);
+  if (fx) {
     const t = now();
     let freed = false;
-    c.per.forEach((n, r) => {
-      if (prev.per[r] > 0 && n === 0) { freed = true; pluck(r, 1); state.flashes.push({ r, t0: t }); }
-    });
+    for (const r of state.tangled) if (!now2.has(r)) { freed = true; pluck(r, 1); state.flashes.push({ r, t0: t }); }
     if (freed) { bumpPill(); haptic(8); }
-    else if (c.count > prev.count) Sound.worse();
   }
-  state.conf = c;
+  state.tangled = now2;
   updateHud();
 }
-function ropeLen(r) {
-  const a = endGrid(r, 0), b = endGrid(r, 1);
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
+function ropeLen(r) { const [A, B] = segOf(state.M, r); return dist(A, B); }
 function pluck(r, strength, delay) {
-  const rope = state.ropes[r];
-  rope.pluck = { t0: now() + (delay || 0) * 1000, amp: RW * 0.9 * strength };
+  const L = state.look[r];
+  L.pluck = { t0: now() + (delay || 0) * 1000, amp: RW * 0.9 * strength };
   Sound.pluck(ropeLen(r), delay, 0.06 + 0.06 * strength);
   wake();
 }
@@ -675,30 +747,25 @@ function loadLevel(level, opts = {}) {
   const d = (state.def = levelDef(level));
   layoutBoard();
   const cur = save.cur;
-  let ends = d.start, z = d.z;
-  if (!opts.fresh && cur && cur.level === level && Array.isArray(cur.ends) && cur.ends.length === d.r) {
-    ends = cur.ends; z = cur.z || d.z;
-    state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started;
+  let snap = d.start;
+  if (!opts.fresh && cur && cur.level === level && cur.snap && cur.snap.ends.length === d.r) {
+    snap = cur.snap; state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started;
   } else {
     state.moves = 0; state.timeLeft = d.time; state.started = false;
   }
+  state.M = makeModel(d, snap.ends, snap.under, snap.z);
   const t = now();
-  state.ropes = ends.map((e, i) => {
-    const col = hex(d.colors[i]);
-    const c = lum(col) < 110 ? mix(col, [255, 248, 236], 0.25) : col;
+  state.look = d.colors.map((hx, i) => {
+    const col = hex(hx), c = lum(col) < 110 ? mix(col, [255, 248, 236], 0.25) : col;
     return {
-      e: e.slice(), col: c, dark: mix(c, [10, 8, 6], 0.55), light: mix(c, [255, 252, 245], 0.45),
-      tw: [null, null], intro: t + 120 + i * Math.min(60, 700 / d.r), pluck: null, w: [{ x: 0, y: 0 }, { x: 0, y: 0 }], alpha: 0,
+      col: c, dark: mix(c, [10, 8, 6], 0.55), light: mix(c, [255, 252, 245], 0.45),
+      tw: [null, null], intro: t + 120 + i * Math.min(60, 700 / d.r), pluck: null, alpha: 0,
       sp: { ox: 0, oy: 0, vx: 0, vy: 0, mx: NaN, my: NaN },
     };
   });
-  state.z = z.slice();
-  state.occ = new Int16Array(d.cells).fill(-1);
-  state.ropes.forEach((r, i) => { state.occ[r.e[0]] = i * 2; state.occ[r.e[1]] = i * 2 + 1; });
   state.phase = "play"; state.win = null; state.lost = null; state.undo = []; state.flashes = []; state.rings = [];
-  state.particles = []; state.hint = null; state.outro = null; drag = null; state.lowSec = -1;
-  state.conf = { count: 0, per: [], points: [] };
-  recompute(false);
+  state.particles = []; state.hint = null; state.outro = null; drag = null; state.lowSec = -1; state.blockedFx = [];
+  state.tangled = tangledSet(state.M);
   saveCur();
   resetCam(false);
   setChapterBg(level, opts.instantBg);
@@ -724,13 +791,19 @@ function setChapterBg(level, instant) {
 /* ---------- Anzeige ---------- */
 let pillTimer = 0, pillMsg = null;
 function updateHud() {
-  const c = state.conf.count, pill = $("#pill");
+  const c = crossCount(state.M), pill = $("#pill");
   $("#bHint").disabled = state.phase !== "play";
   if (state.phase !== "play") { pill.classList.add("hide"); return; }
   pill.classList.remove("hide");
   if (pillMsg) { pill.textContent = pillMsg; pill.className = "info"; return; }
+  if (drag && drag.preview != null) {
+    const p = drag.preview;
+    pill.className = p === 0 ? "zero" : "";
+    pill.textContent = p === 0 ? "Frei – jetzt loslassen" : `${c} → ${p} Kreuzungen`;
+    return;
+  }
   pill.className = c === 0 ? "zero" : "";
-  pill.textContent = c === 0 ? (drag ? "Frei – jetzt loslassen" : "Frei") : c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
+  pill.textContent = c === 0 ? "Frei" : c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
 }
 function updateTimer() {
   const d = state.def, f = clamp(state.timeLeft / d.time, 0, 1);
@@ -752,10 +825,10 @@ function bumpPill() {
 function updateUndo() { $("#bUndo").disabled = !state.undo.length || state.phase !== "play"; }
 
 const TIPS = {
-  1: "Ziehe ein Ende der Kordel in eine freie Öse – bis sich keine Kordeln mehr kreuzen.",
-  2: "Die Uhr läuft ab dem ersten Griff. Die beiden Rauten zeigen, wie viele Sterne noch drin sind.",
-  4: "Wird eine Kordel frei, klingt sie wie eine Saite.",
-  6: "Die Glühbirne zeigt einen guten Zug – sie kostet aber zehn Sekunden.",
+  1: "Ziehe ein Kordelende in eine freie Öse, bis sich keine Kordeln mehr kreuzen.",
+  2: "Liegt eine Kordel unter einer anderen, hängt sie fest. Bewege zuerst die obere.",
+  4: "Die Uhr läuft ab dem ersten Griff. Die Rauten zeigen, wie viele Sterne noch drin sind.",
+  7: "Die Glühbirne zeigt einen guten Zug – sie kostet aber zehn Sekunden.",
 };
 let tipTimer = 0;
 function showTipFor(level) {
@@ -772,53 +845,49 @@ function tipDone() {
 }
 function saveCur() {
   if (state.phase !== "play") return;
-  save.cur = { level: state.level, ends: state.ropes.map((r) => r.e.slice()), z: state.z.slice(), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started };
+  save.cur = { level: state.level, snap: snapshot(state.M), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started };
   persist(true);
 }
 
 /* =====================================================================
-   Eingabe – Kordelende greifen, in eine freie Öse ziehen
+   Eingabe – Kordelende greifen und in eine freie Öse ziehen
    ===================================================================== */
 const HIT = () => Math.max(26, SP * 0.42);
-function endScreen(r, e) {
-  const g = endGrid(r, e), w = g2w(g.x, g.y);
-  return toScreen(w.x, w.y);
-}
 function hitEnd(x, y) {
   let best = null, bd = HIT() ** 2;
-  for (let k = state.z.length - 1; k >= 0; k--) {     // obere Kordeln zuerst
-    const r = state.z[k];
+  const order = drawOrder(state.M);
+  for (let k = order.length - 1; k >= 0; k--) {
+    const r = order[k];
     for (let e = 0; e < 2; e++) {
-      const s = endScreen(r, e), d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      const s = g2s(state.def.P[state.M.ends[r][e]]), d = (s.x - x) ** 2 + (s.y - y) ** 2;
       if (d < bd - 1) { bd = d; best = { r, e, s }; }
     }
   }
   return best;
 }
-function nearestFreeHole(x, y, own) {
-  const w = toWorld(x, y); let best = -1, bd = (SP * 0.5) ** 2;
+function nearestHole(x, y, own) {
+  const w = toWorld(x, y), occ = occupied(state.M);
+  let best = -1, bd = (SP * 0.5) ** 2;
   for (let h = 0; h < state.def.cells; h++) {
-    if (state.occ[h] >= 0 && h !== own) continue;
+    if (occ.has(h) && h !== own) continue;
     const p = g2w(state.def.P[h].x, state.def.P[h].y), d = (p.x - w.x) ** 2 + (p.y - w.y) ** 2;
     if (d < bd) { bd = d; best = h; }
   }
   return best;
 }
 const canAct = () => state.phase === "play" && !state.outro && !state.paused;
-function toTop(r) { state.z = state.z.filter((x) => x !== r); state.z.push(r); }
 function startClock() { if (!state.started) { state.started = true; state.lastTick = now(); } }
+function fingerGrid() { const w = toWorld(drag.x + drag.dx, drag.y + drag.dy); return w2g(w.x, w.y); }
 
 canvas.addEventListener("pointerdown", (e) => {
   Sound.init();
   if (!canAct() || drag) return;
-  const x = e.clientX, y = e.clientY;
-  const hit = hitEnd(x, y);
+  const x = e.clientX, y = e.clientY, hit = hitEnd(x, y);
   if (!hit) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
-  for (const r of state.ropes) r.intro = 0;
-  drag = { pid: e.pointerId, rope: hit.r, end: hit.e, x, y, dx: hit.s.x - x, dy: hit.s.y - y, target: -1, from: state.ropes[hit.r].e[hit.e] };
-  state.ropes[hit.r].tw[hit.e] = null;
-  toTop(hit.r);
+  for (const L of state.look) L.intro = 0;
+  drag = { pid: e.pointerId, r: hit.r, e: hit.e, x, y, dx: hit.s.x - x, dy: hit.s.y - y, from: state.M.ends[hit.r][hit.e], target: -1, legal: false, block: [], preview: null, snagged: false };
+  state.look[hit.r].tw[hit.e] = null;
   state.hint = null;
   startClock();
   Sound.pick(); haptic(6);
@@ -827,30 +896,39 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (!drag || drag.pid !== e.pointerId) return;
   drag.x = e.clientX; drag.y = e.clientY;
-  const prev = drag.target;
-  drag.target = nearestFreeHole(drag.x + drag.dx, drag.y + drag.dy, drag.from);
-  if (drag.target !== prev && drag.target >= 0 && drag.target !== drag.from) haptic(3);
-  recompute(true);
+  const M = state.M, g = fingerGrid();
+  const prevT = drag.target, wasSnag = drag.snagged;
+  drag.block = blockers(M, drag.r, drag.e, g);
+  drag.snagged = drag.block.length > 0;
+  drag.target = nearestHole(drag.x + drag.dx, drag.y + drag.dy, drag.from);
+  drag.legal = drag.target >= 0 && drag.target !== drag.from && legal(M, drag.r, drag.e, drag.target);
+  if (drag.legal) { const c = cloneModel(M); applyMove(c, drag.r, drag.e, drag.target); drag.preview = crossCount(c); }
+  else drag.preview = null;
+  if (drag.snagged && !wasSnag) { Sound.snag(); haptic(12); }
+  if (drag.target !== prevT && drag.legal) haptic(3);
+  updateHud();
   wake();
 });
 function endPointer(e) {
   if (!drag || drag.pid !== e.pointerId) return;
-  const d = drag, rope = state.ropes[d.rope];
-  const fromW = toWorld(d.x + d.dx, d.y + d.dy), fromG = w2g(fromW.x, fromW.y);
+  const d = drag, M = state.M, L = state.look[d.r];
+  const fg = fingerGrid();
   drag = null;
-  const target = e.type === "pointercancel" ? -1 : d.target;
-  const moved = target >= 0 && target !== d.from;
-  rope.tw[d.end] = { fx: fromG.x, fy: fromG.y, t0: now(), dur: moved ? 160 : 320, ease: moved ? eOut : eBack };
-  if (moved) {
-    state.occ[d.from] = -1; state.occ[target] = d.rope * 2 + d.end; rope.e[d.end] = target;
-    state.undo.push({ r: d.rope, e: d.end, from: d.from, to: target });
+  const ok = e.type !== "pointercancel" && d.legal;
+  L.tw[d.e] = { fx: fg.x, fy: fg.y, t0: now(), dur: ok ? 160 : 380, ease: ok ? eOut : eBack };
+  if (ok) {
+    state.undo.push(snapshot(M)); if (state.undo.length > 100) state.undo.shift();
+    applyMove(M, d.r, d.e, d.target);
     state.moves++;
     Sound.seat(); haptic(10);
     tipDone();
-  } else Sound.back();
-  recompute(true);
+  } else {
+    if (d.snagged) { for (const s of d.block) state.blockedFx.push({ s, t0: now() }); flashPill("Liegt unter einer anderen Kordel", 1600); }
+    Sound.back();
+  }
+  afterChange(true);
   updateUndo(); saveCur();
-  if (state.conf.count === 0) setTimeout(() => solve(d.rope), 160);
+  if (crossCount(M) === 0) setTimeout(() => solve(d.r), 160);
   wake();
 }
 canvas.addEventListener("pointerup", endPointer);
@@ -860,32 +938,22 @@ document.addEventListener("dblclick", (e) => e.preventDefault());
 
 function undo() {
   if (!canAct() || drag || !state.undo.length) return;
-  const m = state.undo.pop(), rope = state.ropes[m.r];
-  const p = state.def.P[m.to];
-  rope.tw[m.e] = { fx: p.x, fy: p.y, t0: now(), dur: 300, ease: eOut };
-  state.occ[m.to] = -1; state.occ[m.from] = m.r * 2 + m.e; rope.e[m.e] = m.from;
-  toTop(m.r);
-  recompute(true); updateUndo(); saveCur();
+  const s = state.undo.pop(), old = state.M;
+  state.M = makeModel(state.def, s.ends, s.under, s.z);
+  // geänderte Enden gleiten zurück
+  old.ends.forEach((e2, r) => e2.forEach((h, e) => {
+    if (h !== state.M.ends[r][e]) { const p = state.def.P[h]; state.look[r].tw[e] = { fx: p.x, fy: p.y, t0: now(), dur: 300, ease: eOut }; }
+  }));
+  afterChange(true); updateUndo(); saveCur();
   Sound.tone(392, { dur: 0.5, vol: 0.05, bright: 1500 }); haptic(5);
-  if (state.conf.count === 0) setTimeout(() => solve(m.r), 320);
   wake();
 }
 function hint() {
   if (!canAct() || drag) return;
   Sound.init();
-  const d = state.def, base = livePositions(), cur = ropeConflicts(base, false).count;
-  if (!cur) return;
-  let best = null, bc = cur;
-  for (let r = 0; r < d.r; r++) for (let e = 0; e < 2; e++) for (let h = 0; h < d.cells; h++) {
-    if (state.occ[h] >= 0) continue;
-    const pos = base.map((p) => p.slice()); pos[r][e] = d.P[h];
-    const c = ropeConflicts(pos, false).count;
-    if (c < bc) { bc = c; best = { r, e, h }; }
-  }
-  if (!best) { // kein einzelner Zug verbessert – zeige die verworrenste Kordel
-    let r = 0; state.conf.per.forEach((n, i) => { if (n > state.conf.per[r]) r = i; });
-    best = { r, e: 0, h: -1 };
-  }
+  if (!crossCount(state.M)) return;
+  const best = bestMove(state.M);
+  if (!best) return;
   state.hint = { ...best, t0: now() };
   startClock();
   state.timeLeft = Math.max(1, state.timeLeft - 10);
@@ -902,11 +970,10 @@ function restart() { if (state.outro) return; closeMenu(); nextLevel(state.level
    ===================================================================== */
 const TITLES = ["Entwirrt", "Gelöst", "Wie gestimmt", "Fein gelöst", "Gelungen", "Wunderbar", "Frei"];
 function solve(lastRope) {
-  if (state.phase !== "play" || state.conf.count !== 0 || drag) return;
+  if (state.phase !== "play" || crossCount(state.M) !== 0 || drag) return;
   state.phase = "won";
-  const d = state.def;
-  // wie eine Harfe: von links nach rechts zupfen
-  const midX = (r) => state.ropes[r].e.reduce((s, h) => s + g2w(d.P[h].x, d.P[h].y).x, 0);
+  const d = state.def, M = state.M;
+  const midX = (r) => { const [A, B] = segOf(M, r); return g2w(A.x, A.y).x + g2w(B.x, B.y).x; };
   const order = range(d.r).sort((a, b) => midX(a) - midX(b));
   const STEP = clamp(1400 / d.r, 90, 160);
   const delay = new Array(d.r).fill(0);
@@ -915,7 +982,7 @@ function solve(lastRope) {
   const used = d.time - state.timeLeft, stars = starsFor(state.timeLeft, d.time);
   const prev = save.solved[state.level];
   const better = !prev || stars > prev.st || (stars === prev.st && used < prev.t);
-  save.solved[state.level] = better ? { ends: state.ropes.map((r) => r.e.slice()), st: stars, t: Math.round(used), m: state.moves } : prev;
+  save.solved[state.level] = better ? { ends: M.ends.map((e) => e.slice()), st: stars, t: Math.round(used), m: state.moves } : prev;
   save.unlocked = Math.max(save.unlocked, state.level + 1);
   save.cur = null;
   persist();
@@ -951,7 +1018,7 @@ function solve(lastRope) {
 }
 function lose() {
   if (state.phase !== "play") return;
-  if (drag) { const r = state.ropes[drag.rope]; drag = null; r.tw = [null, null]; recompute(false); }
+  drag = null;
   state.phase = "lost";
   state.lost = { t0: now() };
   state.timeLeft = 0;
@@ -966,7 +1033,7 @@ function lose() {
   $("#cTime").textContent = fmtTime(state.def.time);
   $("#cMoves").textContent = state.moves;
   $("#cRopes").textContent = state.def.r;
-  const c = state.conf.count;
+  const c = crossCount(state.M);
   $("#cNote").textContent = `${c === 1 ? "Eine Kreuzung blieb" : c + " Kreuzungen blieben"}. Beim nächsten Versuch liegen die Kordeln wieder genauso.`;
   $("#cAlt").textContent = "Level"; $("#cMain").textContent = "Nochmal";
   setTimeout(() => { if (state.phase === "lost") { card.classList.add("show"); frameBoard(true); } }, 900);
@@ -1006,9 +1073,71 @@ function frame() {
   if (busy) raf = requestAnimationFrame(frame);
 }
 
+// Endpunkte einer Kordel in Rasterkoordinaten (mit Finger und Einrast-Animation)
+function ropeEnds(r, t) {
+  const M = state.M, P = state.def.P, L = state.look[r];
+  return [0, 1].map((e) => {
+    if (drag && drag.r === r && drag.e === e) return fingerGrid();
+    const g = P[M.ends[r][e]], tw = L.tw[e];
+    if (!tw) return g;
+    const k = clamp((t - tw.t0) / tw.dur, 0, 1), ee = tw.ease(k);
+    return { x: lerp(tw.fx, g.x, ee), y: lerp(tw.fy, g.y, ee) };
+  });
+}
+// Verlauf auf dem Bildschirm; eine festhängende Kordel hakt sich um die Öse der Deckkordel
+function screenPath(r, t) {
+  const [A, B] = ropeEnds(r, t);
+  const pts = [g2s(A)];
+  if (drag && drag.r === r && drag.block.length) {
+    const fixed = drag.e === 0 ? B : A, finger = drag.e === 0 ? A : B;
+    const hooks = drag.block.map((s) => {
+      const [C, D] = segOf(state.M, s);
+      return dist(fixed, C) + dist(C, finger) < dist(fixed, D) + dist(D, finger) ? C : D;
+    }).sort((p, q) => dist(fixed, p) - dist(fixed, q));
+    const chain = [fixed, ...hooks, finger];
+    if (drag.e === 0) chain.reverse();
+    const sp = chain.map(g2s);
+    // Ecke etwas neben den Stift legen, damit die Kordel sichtbar herumläuft
+    for (let i = 1; i < sp.length - 1; i++) {
+      const p = sp[i], a = sp[i - 1], b = sp[i + 1];
+      const u = toward(p, a, 1), v = toward(p, b, 1);
+      let ix = u.x - p.x + v.x - p.x, iy = u.y - p.y + v.y - p.y, il = Math.hypot(ix, iy);
+      if (il < 1e-3) { ix = -(b.y - a.y); iy = b.x - a.x; il = Math.hypot(ix, iy) || 1; }
+      const off = (PEG + RW * 0.7) * cam.s;
+      sp[i] = { x: p.x - (ix / il) * off, y: p.y - (iy / il) * off };
+    }
+    return sp;
+  }
+  pts.push(g2s(B));
+  return pts;
+}
+function tracePath(pts, r, t) {
+  const L = state.look[r];
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  if (pts.length === 2) {
+    let cx = (pts[0].x + pts[1].x) / 2 + L.sp.ox * 2 * cam.s, cy = (pts[0].y + pts[1].y) / 2 + L.sp.oy * 2 * cam.s;
+    if (L.pluck) {
+      const el = (t - L.pluck.t0) / 1000;
+      if (el > 0) {
+        const A = pts[0], B = pts[1], len = Math.hypot(B.x - A.x, B.y - A.y) || 1;
+        const a = L.pluck.amp * 2 * Math.exp(-el * 2.6) * Math.sin(el * TAU * 9);
+        cx += (-(B.y - A.y) / len) * a; cy += ((B.x - A.x) / len) * a;
+      }
+    }
+    ctx.quadraticCurveTo(cx, cy, pts[1].x, pts[1].y);
+    return;
+  }
+  const rad = RW * 1.6 * cam.s;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const rr = Math.min(rad, dist(pts[i], pts[i - 1]) / 2, dist(pts[i], pts[i + 1]) / 2);
+    ctx.arcTo(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, Math.max(0.1, rr));
+  }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+}
+
 function update(t, dt) {
   let busy = !!drag;
-  // Uhr
   if (state.phase === "play" && state.started && !state.paused && !document.hidden && !state.outro) {
     state.timeLeft -= Math.min(0.25, (t - (state.lastTick || t)) / 1000);
     const sec = Math.ceil(state.timeLeft);
@@ -1024,67 +1153,52 @@ function update(t, dt) {
     cam.s = lerp(cam.tw.f.s, cam.tw.t.s, e); cam.ox = lerp(cam.tw.f.ox, cam.tw.t.ox, e); cam.oy = lerp(cam.tw.f.oy, cam.tw.t.oy, e);
     if (k >= 1) cam.tw = null; busy = true;
   }
-  // Kordeln: Endpunkte, Nachschwingen, Zupfen
-  const d = state.def;
-  state.ropes.forEach((rope, r) => {
-    rope.w = [0, 1].map((e) => {
-      let g;
-      if (drag && drag.rope === r && drag.end === e) g = endGrid(r, e);
-      else {
-        g = d.P[rope.e[e]];
-        const tw = rope.tw[e];
-        if (tw) {
-          const k = clamp((t - tw.t0) / tw.dur, 0, 1), ee = tw.ease(k);
-          g = { x: lerp(tw.fx, g.x, ee), y: lerp(tw.fy, g.y, ee) };
-          if (k >= 1) rope.tw[e] = null; busy = true;
-        }
-      }
-      return g2w(g.x, g.y);
-    });
-    rope.alpha = rope.intro ? clamp((t - rope.intro) / 450, 0, 1) : 1;
-    if (rope.alpha < 1) busy = true;
-    const sp = rope.sp, A = rope.w[0], B = rope.w[1];
+  state.look.forEach((L, r) => {
+    L.alpha = L.intro ? clamp((t - L.intro) / 450, 0, 1) : 1;
+    if (L.alpha < 1) busy = true;
+    for (let e = 0; e < 2; e++) if (L.tw[e]) { if (t - L.tw[e].t0 > L.tw[e].dur) L.tw[e] = null; else busy = true; }
+    if (L.pluck) { if (t - L.pluck.t0 > 1800) L.pluck = null; else busy = true; }
+    // leichtes Nachschwingen beim Bewegen
+    const [A, B] = ropeEnds(r, t).map((g) => g2w(g.x, g.y)), sp = L.sp;
     const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
     if (!isNaN(sp.mx)) { sp.ox -= (mx - sp.mx) * 0.5; sp.oy -= (my - sp.my) * 0.5; }
     sp.mx = mx; sp.my = my;
-    const len = Math.hypot(A.x - B.x, A.y - B.y), cap = len * 0.16;
-    const ol = Math.hypot(sp.ox, sp.oy); if (ol > cap && ol > 0) { sp.ox *= cap / ol; sp.oy *= cap / ol; }
+    const len = Math.hypot(A.x - B.x, A.y - B.y), cap = len * 0.16, ol = Math.hypot(sp.ox, sp.oy);
+    if (ol > cap && ol > 0) { sp.ox *= cap / ol; sp.oy *= cap / ol; }
     sp.vx += (-sp.ox * 200 - sp.vx * 12) * dt; sp.vy += (-sp.oy * 200 - sp.vy * 12) * dt;
     sp.ox += sp.vx * dt; sp.oy += sp.vy * dt;
     if (Math.abs(sp.ox) + Math.abs(sp.oy) + Math.abs(sp.vx) * 0.02 + Math.abs(sp.vy) * 0.02 > 0.04) busy = true;
-    if (rope.pluck) { if (t - rope.pluck.t0 > 1800) rope.pluck = null; else busy = true; }
   });
   state.flashes = state.flashes.filter((f) => t - f.t0 < 800);
+  state.blockedFx = state.blockedFx.filter((f) => t - f.t0 < 1400);
   state.rings = state.rings.filter((r) => t - r.t0 < r.dur);
   for (const p of state.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 6 * dt; p.vx *= 1 - dt * 0.6; }
   state.particles = state.particles.filter((p) => t - p.t0 < p.life);
-  if (state.flashes.length || state.rings.length || state.particles.length) busy = true;
-  if (state.conf.count && state.phase === "play") busy = true; // Kreuzungspunkte glimmen
+  if (state.flashes.length || state.rings.length || state.particles.length || state.blockedFx.length) busy = true;
+  if (crossCount(state.M) && state.phase === "play") busy = true;
   if (state.hint && t - state.hint.t0 > 3200) state.hint = null;
   if (state.hint) busy = true;
   if (state.lost && t - state.lost.t0 < 1500) busy = true;
-  // Siegesfolge
   if (state.win) {
     const w = state.win, el = t - w.t0;
     if (!w.ringDone) {
       w.ringDone = true;
-      const rp = state.ropes[w.lastRope], s = toScreen((rp.w[0].x + rp.w[1].x) / 2, (rp.w[0].y + rp.w[1].y) / 2);
-      state.rings.push({ x: s.x, y: s.y, t0: t, dur: 1700, r: Math.max(W, H) * 0.75 });
+      const [A, B] = segOf(state.M, w.lastRope).map(g2s);
+      state.rings.push({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, t0: t, dur: 1700, r: Math.max(W, H) * 0.75 });
     }
-    state.ropes.forEach((rope, r) => {
-      if (!w.done[r] && el >= w.delay[r]) {
-        w.done[r] = 1;
-        pluck(r, 1.25);
-        for (const p of rope.w) {
-          const s = toScreen(p.x, p.y);
-          for (let k = 0; k < 3; k++) {
-            const a = Math.random() * TAU, v = 12 + Math.random() * 36;
-            state.particles.push({ x: s.x, y: s.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 24, t0: t, life: 1300 + Math.random() * 1400, size: 5 + Math.random() * 9 });
-          }
+    for (let r = 0; r < state.def.r; r++) {
+      if (w.done[r] || el < w.delay[r]) continue;
+      w.done[r] = 1;
+      pluck(r, 1.25);
+      for (const g of segOf(state.M, r)) {
+        const s = g2s(g);
+        for (let k = 0; k < 3; k++) {
+          const a = Math.random() * TAU, v = 12 + Math.random() * 36;
+          state.particles.push({ x: s.x, y: s.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 24, t0: t, life: 1300 + Math.random() * 1400, size: 5 + Math.random() * 9 });
         }
-        haptic(4);
       }
-    });
+      haptic(4);
+    }
     if (el < 6000) busy = true;
   }
   if (state.outro) {
@@ -1094,46 +1208,66 @@ function update(t, dt) {
   return busy;
 }
 
-// Kontrollpunkt der Kordel: Nachschwingen + gezupfte Saite
-function ropeCurve(rope, t) {
-  const A = toScreen(rope.w[0].x, rope.w[0].y), B = toScreen(rope.w[1].x, rope.w[1].y);
-  let cx = (A.x + B.x) / 2 + rope.sp.ox * 2 * cam.s, cy = (A.y + B.y) / 2 + rope.sp.oy * 2 * cam.s;
-  if (rope.pluck) {
-    const el = (t - rope.pluck.t0) / 1000;
-    if (el > 0) {
-      const len = Math.hypot(B.x - A.x, B.y - A.y) || 1, nx = -(B.y - A.y) / len, ny = (B.x - A.x) / len;
-      const a = rope.pluck.amp * 2 * Math.exp(-el * 2.6) * Math.sin(el * TAU * 9);
-      cx += nx * a; cy += ny * a;
-    }
-  }
-  return { A, B, cx, cy };
-}
-function curvePoint(c, f) { const g = 1 - f; return { x: g * g * c.A.x + 2 * g * f * c.cx + f * f * c.B.x, y: g * g * c.A.y + 2 * g * f * c.cy + f * f * c.B.y }; }
-function strokeCurve(c, width, style, dx, dy) {
-  dx = dx || 0; dy = dy || 0;
-  ctx.beginPath(); ctx.moveTo(c.A.x + dx, c.A.y + dy); ctx.quadraticCurveTo(c.cx + dx, c.cy + dy, c.B.x + dx, c.B.y + dy);
-  ctx.lineWidth = width; ctx.strokeStyle = style; ctx.stroke();
-}
 function glowAt(spr, x, y, size, alpha) { ctx.globalAlpha = alpha; ctx.drawImage(spr, x - size / 2, y - size / 2, size, size); }
-
-function drawPeg(x, y, rope, s, a, goldK) {
+function drawPeg(x, y, L, s, a, goldK) {
   const r = PEG * s;
   ctx.globalAlpha = a;
   ctx.beginPath(); ctx.arc(x + 0.8, y + 2, r + 1, 0, TAU); ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fill();
-  const body = goldK ? mix(rope.col, GOLD_HI, goldK * 0.35) : rope.col;
+  const body = goldK ? mix(L.col, GOLD_HI, goldK * 0.35) : L.col;
   const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r * 1.1);
-  g.addColorStop(0, rgba(mix(body, [255, 255, 255], 0.55), 1)); g.addColorStop(0.55, rgba(body, 1)); g.addColorStop(1, rgba(rope.dark, 1));
+  g.addColorStop(0, rgba(mix(body, [255, 255, 255], 0.55), 1)); g.addColorStop(0.55, rgba(body, 1)); g.addColorStop(1, rgba(L.dark, 1));
   ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = g; ctx.fill();
-  ctx.lineWidth = Math.max(1.2, r * 0.18);                    // Messingkappe
+  ctx.lineWidth = Math.max(1.2, r * 0.18);
   ctx.strokeStyle = goldK ? rgba(mix([200, 166, 104], GOLD_HI, goldK), 1) : "rgba(200,166,104,0.9)";
   ctx.beginPath(); ctx.arc(x, y, r * 0.92, 0, TAU); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.38, r * 0.3, r * 0.17, -0.6, 0, TAU); ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.fill();
+}
+function drawRope(r, t, base, lostK, w, shadow) {
+  const L = state.look[r], pts = screenPath(r, t), s = cam.s;
+  const a = base * L.alpha * (1 - lostK * 0.4);
+  if (a <= 0) return;
+  const goldK = w && w.done[r] ? eOut(clamp((t - w.t0 - w.delay[r]) / 500, 0, 1)) : 0;
+  const col = mix(mix(L.col, ASH, lostK * 0.55), GOLD_HI, goldK * 0.25);
+  const rw = RW * s * (L.alpha < 1 ? 0.6 + 0.4 * L.alpha : 1);
+  const held = drag && drag.r === r;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (shadow) {
+    ctx.save(); ctx.translate(1.2 * s, (held ? 6 : 3) * s);
+    ctx.globalAlpha = a * 0.45; tracePath(pts, r, t); ctx.lineWidth = rw + 2; ctx.strokeStyle = "#000"; ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = a; tracePath(pts, r, t);
+  ctx.lineWidth = rw + 1.8; ctx.strokeStyle = rgba(L.dark, 1); ctx.stroke();
+  ctx.lineWidth = rw; ctx.strokeStyle = rgba(col, 1); ctx.stroke();
+  ctx.setLineDash([rw * 0.55, rw * 0.75]);
+  ctx.globalAlpha = a * 0.22; ctx.lineWidth = rw * 0.62; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.save(); ctx.translate(-rw * 0.16, -rw * 0.2);
+  ctx.globalAlpha = a * 0.5; tracePath(pts, r, t); ctx.lineWidth = rw * 0.22; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
+  ctx.restore();
+  if (goldK > 0 && goldK < 1) {
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a * (1 - goldK) * 0.6;
+    tracePath(pts, r, t); ctx.lineWidth = rw + 6; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke(); ctx.restore();
+  }
+  for (let e = 0; e < 2; e++) {
+    const p = e ? pts[pts.length - 1] : pts[0], lifted = held && drag.e === e;
+    if (lifted) glowAt(sprites.glow, p.x, p.y, PEG * 7 * s, a * 0.25);
+    drawPeg(p.x, p.y, L, s * (lifted ? 1.3 : 1) * (L.alpha < 1 ? eBack(L.alpha) : 1), a, goldK);
+  }
+}
+// Leuchten einer Kordel (blockierende Deckkordel, Tipp)
+function glowRope(r, t, alpha, color) {
+  if (alpha <= 0) return;
+  const pts = screenPath(r, t);
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = alpha;
+  tracePath(pts, r, t); ctx.lineCap = "round"; ctx.lineWidth = RW * cam.s + 7; ctx.strokeStyle = rgba(color, 1); ctx.stroke();
+  ctx.restore();
 }
 
 function draw(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const d = state.def; if (!d || !state.ropes.length) return;
+  const d = state.def, M = state.M; if (!d || !M) return;
   ctx.save();
   if (state.outro) {
     const k = eIn(clamp((t - state.outro.t0) / state.outro.dur, 0, 1));
@@ -1158,16 +1292,20 @@ function draw(t) {
     ctx.fillStyle = g; ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(236,228,212,0.09)"; ctx.stroke();
   }
-
   /* --- Ösen --- */
   const hs = sprites.hole.size * s;
   for (let h = 0; h < d.cells; h++) {
-    const wp = g2w(d.P[h].x, d.P[h].y), p = toScreen(wp.x, wp.y);
+    const p = g2s(d.P[h]);
     ctx.globalAlpha = base;
     ctx.drawImage(sprites.hole.cv, p.x - hs / 2, p.y - hs / 2, hs, hs);
     if (drag && drag.target === h && h !== drag.from) {
-      glowAt(sprites.glow, p.x, p.y, HOLE * 6 * s, base * 0.45);
-      ctx.globalAlpha = base * 0.9; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.5;
+      if (drag.legal) {
+        glowAt(sprites.glow, p.x, p.y, HOLE * 6 * s, base * 0.45);
+        ctx.globalAlpha = base * 0.9; ctx.strokeStyle = rgba(GOLD_HI, 1);
+      } else {
+        ctx.globalAlpha = base * 0.7; ctx.strokeStyle = "#e08a6d";
+      }
+      ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, HOLE * 1.35 * s, 0, TAU); ctx.stroke();
     }
     if (w) {
@@ -1175,61 +1313,68 @@ function draw(t) {
       if (k > 0 && k < 1) { ctx.save(); ctx.globalCompositeOperation = "lighter"; glowAt(sprites.glow, p.x, p.y, HOLE * 4 * s, base * Math.sin(Math.PI * k) * 0.6); ctx.restore(); }
     }
   }
-
-  /* --- Kordeln (in Schichtreihenfolge) --- */
-  ctx.lineCap = "round";
-  for (const r of state.z) {
-    const rope = state.ropes[r], c = ropeCurve(rope, t);
-    const a = base * rope.alpha * (1 - lostK * 0.4);
-    if (a <= 0) continue;
-    const goldK = w && w.done[r] ? eOut(clamp((t - w.t0 - w.delay[r]) / 500, 0, 1)) : 0;
-    const col = mix(mix(rope.col, ASH, lostK * 0.55), GOLD_HI, goldK * 0.25);
-    const rw = RW * s * (rope.alpha < 1 ? 0.6 + 0.4 * rope.alpha : 1);
-    const held = drag && drag.rope === r;
-    ctx.globalAlpha = a * 0.45; strokeCurve(c, rw + 2, "rgba(0,0,0,1)", 1.2 * s, (held ? 6 : 3) * s);
-    ctx.globalAlpha = a; strokeCurve(c, rw + 1.6, rgba(rope.dark, 1));
-    strokeCurve(c, rw, rgba(col, 1));
-    ctx.setLineDash([rw * 0.55, rw * 0.75]);                   // gedrehte Fasern
-    ctx.globalAlpha = a * 0.22; strokeCurve(c, rw * 0.62, rgba(rope.light, 1));
-    ctx.setLineDash([]);
-    ctx.globalAlpha = a * 0.5; strokeCurve(c, rw * 0.22, rgba(rope.light, 1), -rw * 0.16, -rw * 0.2);
-    if (goldK > 0 && goldK < 1) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a * (1 - goldK) * 0.6; strokeCurve(c, rw + 6, rgba(GOLD_HI, 1)); ctx.restore(); }
-    for (let e = 0; e < 2; e++) {                              // Stifte an beiden Enden
-      const p = e ? c.B : c.A, lifted = held && drag.end === e;
-      if (lifted) glowAt(sprites.glow, p.x, p.y, PEG * 7 * s, a * 0.25);
-      drawPeg(p.x, p.y, rope, s * (lifted ? 1.3 : 1) * (rope.alpha < 1 ? eBack(rope.alpha) : 1), a, goldK);
+  /* --- Kordeln: von unten nach oben, dann Überkreuzungen nachzeichnen --- */
+  const order = drawOrder(M), idx = {};
+  order.forEach((r, i) => (idx[r] = i));
+  // die gezogene Kordel liegt beim Ziehen sichtbar obenauf – außer wo sie festhängt
+  const held = drag ? drag.r : -1;
+  const layers = held >= 0 ? order.filter((r) => r !== held).concat([held]) : order;
+  layers.forEach((r, i) => (idx[r] = i));
+  for (const r of layers) drawRope(r, t, base, lostK, w, true);
+  const cr = crossings(M), crossR = RW * 2.3 * s;
+  if (!drag) {
+    for (const c of cr) {
+      if (c.under < 0 || idx[c.under] < idx[c.over]) continue;
+      const X = g2s(c);
+      ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
+      drawRope(c.over, t, base, lostK, w, false);
+      ctx.restore();
+    }
+  } else {
+    // beim Ziehen: Deckkordeln über die gezogene Kordel legen, wo sie darunter klemmt
+    for (let o = 0; o < M.R; o++) {
+      if (!isUnder(M, held, o)) continue;
+      const pts = screenPath(held, t), C = segOf(M, o).map(g2s);
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (!segCross(pts[i], pts[i + 1], C[0], C[1])) continue;
+        const X = intersect(pts[i], pts[i + 1], C[0], C[1]);
+        ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
+        drawRope(o, t, base, lostK, w, false);
+        ctx.restore();
+      }
     }
   }
-
-  /* --- Kreuzungspunkte --- */
-  if (!w) {
+  /* --- blockierende Deckkordeln aufleuchten lassen --- */
+  if (drag && drag.snagged) for (const o of drag.block) glowRope(o, t, base * (0.28 + 0.12 * Math.sin(t * 0.012)), GOLD_HI);
+  for (const f of state.blockedFx) { const k = (t - f.t0) / 1400; glowRope(f.s, t, base * 0.45 * Math.sin(Math.PI * Math.min(1, k * 3)) * (1 - k), GOLD_HI); }
+  /* --- Kreuzungen markieren --- */
+  if (!w && !drag) {
     const pulse = 0.8 + 0.2 * Math.sin(t * 0.005), fade = 1 - lostK * 0.5;
-    for (const p of state.conf.points) {
-      if (!p) continue;
-      const wp = g2w(p.x, p.y), sp = toScreen(wp.x, wp.y);
-      glowAt(sprites.coral, sp.x, sp.y, RW * 3.2 * s, base * 0.45 * pulse * fade);
+    for (const c of cr) {
+      const X = g2s(c);
+      glowAt(sprites.coral, X.x, X.y, RW * 3.2 * s, base * 0.45 * pulse * fade);
       ctx.globalAlpha = base * 0.9 * fade;
-      ctx.beginPath(); ctx.arc(sp.x, sp.y, RW * 0.32 * s * (0.9 + 0.2 * pulse), 0, TAU);
+      ctx.beginPath(); ctx.arc(X.x, X.y, RW * 0.3 * s * (0.9 + 0.2 * pulse), 0, TAU);
       ctx.fillStyle = "#e8896a"; ctx.fill();
       ctx.lineWidth = 1; ctx.strokeStyle = "rgba(40,14,8,0.7)"; ctx.stroke();
     }
   }
-
   /* --- Effekte --- */
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   for (const f of state.flashes) {
-    const k = clamp((t - f.t0) / 750, 0, 1), c = ropeCurve(state.ropes[f.r], t);
-    ctx.globalAlpha = base * (1 - k) * 0.45; strokeCurve(c, RW * s + 6 * (1 - k), rgba(GOLD_HI, 1));
-    const p1 = curvePoint(c, 0.5 - 0.5 * eOut(k)), p2 = curvePoint(c, 0.5 + 0.5 * eOut(k));
-    glowAt(sprites.glow, p1.x, p1.y, 30, base * (1 - k)); glowAt(sprites.glow, p2.x, p2.y, 30, base * (1 - k));
+    const k = clamp((t - f.t0) / 750, 0, 1), pts = screenPath(f.r, t);
+    ctx.globalAlpha = base * (1 - k) * 0.45; tracePath(pts, f.r, t); ctx.lineWidth = RW * s + 6 * (1 - k); ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke();
+    const A = pts[0], B = pts[pts.length - 1];
+    glowAt(sprites.glow, lerp(A.x, B.x, 0.5 - 0.5 * eOut(k)), lerp(A.y, B.y, 0.5 - 0.5 * eOut(k)), 30, base * (1 - k));
+    glowAt(sprites.glow, lerp(A.x, B.x, 0.5 + 0.5 * eOut(k)), lerp(A.y, B.y, 0.5 + 0.5 * eOut(k)), 30, base * (1 - k));
   }
   if (w) {
-    state.ropes.forEach((rope, r) => {
+    for (let r = 0; r < d.r; r++) {
       const k = (el - w.delay[r]) / 650;
-      if (k <= 0 || k >= 1) return;
-      const c = ropeCurve(rope, t), p = curvePoint(c, eOut(k));
-      glowAt(sprites.glow, p.x, p.y, 34, base * Math.sin(Math.PI * k));
-    });
+      if (k <= 0 || k >= 1) continue;
+      const [A, B] = segOf(M, r).map(g2s), f = eOut(k);
+      glowAt(sprites.glow, lerp(A.x, B.x, f), lerp(A.y, B.y, f), 34, base * Math.sin(Math.PI * k));
+    }
   }
   for (const r of state.rings) {
     const k = eOut(clamp((t - r.t0) / r.dur, 0, 1));
@@ -1241,26 +1386,22 @@ function draw(t) {
     glowAt(sprites.glow, p.x, p.y, p.size * (1 - k * 0.4), base * Math.sin(Math.PI * Math.min(1, k * 1.15)) * 0.9 * fl);
   }
   ctx.restore();
-
-  /* --- Tipp: Bogen vom Ende zur Öse --- */
+  /* --- Tipp --- */
   if (state.hint) {
     const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp((3200 - el2) / 400, 0, 1);
-    const fw = state.ropes[hn.r].w[hn.e], from = toScreen(fw.x, fw.y);
+    const from = g2s(d.P[M.ends[hn.r][hn.e]]), to = g2s(d.P[hn.h]);
     ctx.strokeStyle = rgba(GOLD_HI, 1);
     for (let k = 0; k < 2; k++) {
       const p = ((el2 + k * 600) % 1200) / 1200;
       ctx.globalAlpha = a * (1 - p); ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(from.x, from.y, PEG * s * (1.4 + p * 1.6), 0, TAU); ctx.stroke();
     }
-    if (hn.h >= 0) {
-      const tw = g2w(d.P[hn.h].x, d.P[hn.h].y), to = toScreen(tw.x, tw.y);
-      const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-      const cx = mx - (to.y - from.y) * 0.2, cy = my + (to.x - from.x) * 0.2;
-      ctx.globalAlpha = a * 0.8; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -el2 * 0.03;
-      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo(cx, cy, to.x, to.y); ctx.lineWidth = 1.6; ctx.stroke();
-      ctx.setLineDash([]);
-      glowAt(sprites.glow, to.x, to.y, HOLE * 5 * s, a * 0.55);
-    }
+    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+    const cx = mx - (to.y - from.y) * 0.2, cy = my + (to.x - from.x) * 0.2;
+    ctx.globalAlpha = a * 0.8; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -el2 * 0.03;
+    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo(cx, cy, to.x, to.y); ctx.lineWidth = 1.6; ctx.stroke();
+    ctx.setLineDash([]);
+    glowAt(sprites.glow, to.x, to.y, HOLE * 5 * s, a * 0.55);
   }
   ctx.restore();
 }
@@ -1317,7 +1458,7 @@ function openMenu() {
   $("#menu").classList.add("open");
   $("#menu").scrollTop = 0;
   let i = 0;
-  const step = () => { const end = Math.min(pending.length, i + 6); for (; i < end; i++) renderThumb(pending[i][0], pending[i][1]); if (i < pending.length) requestAnimationFrame(step); };
+  const step = () => { const end = Math.min(pending.length, i + 4); for (; i < end; i++) renderThumb(pending[i][0], pending[i][1]); if (i < pending.length) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
 function closeMenu() { $("#menu").classList.remove("open"); state.paused = false; state.lastTick = now(); wake(); }
@@ -1351,14 +1492,10 @@ loadLevel(startLevel, { instantBg: true });
 
 // Für Tests
 window.__knoten = {
-  state, save, levelDef,
-  solve() {
-    const d = state.def; state.occ.fill(-1);
-    d.sol.forEach(([a, b], i) => { state.ropes[i].e = [a, b]; state.occ[a] = i * 2; state.occ[b] = i * 2 + 1; });
-    recompute(true); solve(0);
-  },
+  state, save, levelDef, bestMove, crossCount, cloneModel, applyMove, makeModel, legal, allMoves,
   level: (n) => loadLevel(n, { fresh: true }),
-  holeScreen: (h) => { const p = state.def.P[h], w = g2w(p.x, p.y); return toScreen(w.x, w.y); },
+  holeScreen: (h) => g2s(state.def.P[h]),
+  endScreen: (r, e) => g2s(state.def.P[state.M.ends[r][e]]),
 };
 })();
 </script>
