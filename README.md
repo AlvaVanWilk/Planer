@@ -116,6 +116,11 @@ Mit Konten gibt es zu jedem Mosaik eine **Bestenliste der Familie**: auf der Kar
 Lösen und in der Galerie beim Antippen eines Bildes. Gewertet wird zuerst nach Sternen, dann
 nach Zeit. Die Zeit läuft während des Spiels unsichtbar mit, damit niemand gegen die Uhr hetzt.
 
+Auf der Startseite führt **Bestenliste** zu einer Gesamtwertung der Familie nach Punkten und zu
+den Bestzeiten jedes Bildes, sortiert nach Welten. Punkte je Bild: so viele wie das Bild Felder hat
+(100 bei 10×10, 400 bei 20×20), mit 3/2/1 Sternen 100/70/40 % davon, dazu bis zu 30 % Tempo-Bonus,
+wenn man schneller ist als 1,5 Sekunden pro Feld. Es zählt das beste Ergebnis je Bild.
+
 Beim ersten Aufruf legt `api.php` daneben den Ordner `mosaik-daten/` an. Darin liegt je Konto
 eine Datei. Passwörter sind nur als Hash gespeichert, die Dateien sind über den Browser nicht
 abrufbar. Nach 8 falschen Passwörtern ist ein Konto für 5 Minuten gesperrt; höchstens 30 Konten.

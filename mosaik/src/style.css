@@ -250,3 +250,26 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .lb .lbs { color: #fff; font-size: 12px; letter-spacing: 1px; }
 .lb .lbs i { font-style: normal; opacity: .22; }
 .lb .lbt { text-align: right; color: var(--muted); }
+
+/* Bestenliste-Seite */
+#scores { overflow-y: auto; display: block; }
+.sctabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.sctabs::-webkit-scrollbar { display: none; }
+.sctabs button { flex: none; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--glass); color: var(--muted); font-size: 14px; white-space: nowrap; }
+.sctabs button.on { background: var(--ink); color: #1a1622; border-color: transparent; }
+.lb.big { max-width: 640px; margin: 4px auto 0; }
+.lb.big li { grid-template-columns: 2.4em 1fr auto 5em; font-size: 16px; padding: 11px 14px; }
+.lb .lbx { color: var(--faint); font-size: 13px; white-space: nowrap; }
+.lb .lbp { text-align: right; font-weight: 400; color: #fff; }
+.lbnote { text-align: center; color: var(--faint); font-size: 14px; margin: 14px 0 0; }
+.howto { max-width: 640px; margin: 26px auto 30px; padding: 18px 20px; border-radius: 18px; background: rgba(255,255,255,.035); border: 1px solid var(--line); }
+.howto h3 { font-family: var(--display); font-weight: 400; font-size: 22px; margin: 0 0 8px; letter-spacing: .02em; }
+.howto p { color: var(--muted); font-size: 14.5px; line-height: 1.55; margin: 0 0 6px; }
+.scgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; padding-bottom: 30px; }
+.sccard { padding: 14px; border-radius: 20px; background: rgba(255,255,255,.035); border: 1px solid var(--line); min-width: 0; }
+.schead { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.schead canvas, .scq { width: 52px; height: 52px; border-radius: 8px; flex: none; }
+.scq { display: grid; place-items: center; background: rgba(0,0,0,.3); color: var(--faint); font-family: var(--display); font-size: 22px; }
+.schead b { display: block; font-family: var(--display); font-weight: 400; font-size: 19px; letter-spacing: .02em; }
+.schead small { color: var(--faint); font-size: 12.5px; }
+.card .facts .pts { color: #fff; }

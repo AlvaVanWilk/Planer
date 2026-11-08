@@ -504,7 +504,7 @@
   /* ---------- Bildschirme ---------- */
   let screen = "home";
   function show(name) {
-    ["home", "game", "gallery"].forEach(n => { const el = $("#" + n); el.hidden = n !== name; });
+    ["home", "game", "gallery", "scores"].forEach(n => { const el = $("#" + n); el.hidden = n !== name; });
     const el = $("#" + name); el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
     screen = name;
     if (name !== "game") releaseWake();
@@ -1361,6 +1361,16 @@
   }
 
   // Besser heißt: mehr Sterne, bei gleichen Sternen schneller
+  /* Punkte je Bild: Grundwert = Felder; Sterne 3/2/1 = 100/70/40 %; Tempo-Bonus bis +30 %,
+     wenn schneller als die Richtzeit von 1,5 s pro Feld. */
+  const PAR = 1.5;
+  function points(pic, rec) {
+    if (!pic || !rec) return 0;
+    const n = pic.N, par = n * PAR, sf = rec.stars >= 3 ? 1 : rec.stars === 2 ? 0.7 : 0.4;
+    const speed = clamp(1 - (rec.time > 0 ? rec.time : par) / par);
+    return Math.round(n * sf + n * 0.3 * speed);
+  }
+  const totalPoints = solved => Object.keys(solved || {}).reduce((t, id) => t + points(byId(id), solved[id]), 0);
   function better(a, b) { return !b || a.stars > b.stars || (a.stars === b.stars && (a.time || 1e9) < (b.time || 1e9)); }
 
   /* Bestenliste je Bild (nur mit Konten auf dem Webspace) */
@@ -1404,7 +1414,7 @@
       <h3>${pic.title}</h3>
       <p class="verse">${pic.verse}</p>
       <div class="bigstars">${[0, 1, 2].map(k => `<i class="${k < rec.stars ? "" : "dim"}">★</i>`).join("")}</div>
-      <div class="facts"><span>${fmtTime(rec.time)} min</span>${G.zauber ? `<span>${rec.m} ${rec.m === 1 ? "Fehler" : "Fehler"}</span>` : ""}<span>${rec.h} ${rec.h === 1 ? "Tipp" : "Tipps"}</span></div>
+      <div class="facts"><span class="pts">+${points(pic, rec)} Punkte</span><span>${fmtTime(rec.time)} min</span>${G.zauber ? `<span>${rec.m} ${rec.m === 1 ? "Fehler" : "Fehler"}</span>` : ""}<span>${rec.h} ${rec.h === 1 ? "Tipp" : "Tipps"}</span></div>
       ${extra}
       <div class="lbwrap" id="wBoard"></div>
       <div class="row">
@@ -1476,6 +1486,63 @@
   }
   $("#btnGallery").onclick = () => { AU.init(); AU.ui(); renderGallery(); show("gallery"); };
   $("#galBack").onclick = () => { AU.ui(); renderHome(); show("home"); };
+
+  /* ---------- Bestenliste ---------- */
+  let scoreTab = "gesamt", family = null;
+  async function loadFamily() {
+    if (!ACC.online || !ACC.token) return null;
+    await syncNow();
+    const j = await api({ action: "family", name: ACC.name, token: ACC.token });
+    return j.ok ? j.users : null;
+  }
+  async function openScores() {
+    renderScores(true);
+    show("scores");
+    family = await loadFamily();
+    if (screen === "scores") renderScores(false);
+  }
+  function players() {
+    // Ohne Konten: nur die eigene Zeile
+    if (family && family.length) return family;
+    return [{ name: ACC.name || "Du", me: true, solved: save.solved }];
+  }
+  function picBoard(pic, list) {
+    const rows = list.map(u => ({ name: u.name, me: u.me, rec: u.solved && u.solved[pic.id] })).filter(r => r.rec && r.rec.time != null);
+    rows.sort((a, b) => b.rec.stars - a.rec.stars || a.rec.time - b.rec.time);
+    return rows.map((r, k) => ({ rank: k + 1, name: r.name, me: r.me, stars: r.rec.stars, time: r.rec.time, pts: points(pic, r.rec) }));
+  }
+  function renderScores(loading) {
+    const tabs = $("#scTabs"), body = $("#scBody");
+    tabs.innerHTML = [["gesamt", "Gesamt"]].concat(WORLDS.map(w => [w.id, w.name])).map(([id, n]) => `<button data-t="${id}" class="${id === scoreTab ? "on" : ""}">${n}</button>`).join("");
+    tabs.querySelectorAll("button").forEach(b => b.onclick = () => { AU.ui(); scoreTab = b.dataset.t; renderScores(false); });
+    const list = players();
+    const solo = !(family && family.length);
+    let html = "";
+    if (loading && ACC.online && ACC.token) html += '<p class="lbw">Bestenliste wird geladen …</p>';
+    if (scoreTab === "gesamt") {
+      const rows = list.map(u => ({ name: u.name, me: u.me, pts: totalPoints(u.solved), stars: Object.values(u.solved || {}).reduce((t, r) => t + (r.stars || 0), 0), n: Object.keys(u.solved || {}).filter(id => byId(id)).length }))
+        .sort((a, b) => b.pts - a.pts || b.stars - a.stars);
+      html += `<ol class="lb big">${rows.map((r, k) => `<li class="${r.me ? "me" : ""}"><span class="lbr">${k + 1}.</span><span class="lbn">${esc(r.name)}</span><span class="lbx">${r.n} ${r.n === 1 ? "Bild" : "Bilder"} · ${r.stars} ★</span><span class="lbp">${r.pts.toLocaleString("de-DE")}</span></li>`).join("")}</ol>`;
+      if (solo) html += `<p class="lbnote">${ACC.online ? "Melde dich an, um hier die ganze Familie zu sehen." : "Mit Konten auf dem eigenen Webspace erscheint hier die ganze Familie."}</p>`;
+      html += `<div class="howto"><h3>So entstehen die Punkte</h3>
+        <p>Jedes gelöste Bild bringt so viele Punkte, wie es Felder hat: 100 für ein 10×10, 400 für ein 20×20.</p>
+        <p>Mit 3 Sternen gibt es den vollen Wert, mit 2 Sternen 70 %, mit einem Stern 40 %.</p>
+        <p>Dazu kommt ein Tempo-Bonus von bis zu 30 %, wenn du schneller bist als 1,5 Sekunden pro Feld. Langsamer zu sein kostet nichts. Es zählt jeweils dein bestes Ergebnis.</p></div>`;
+    } else {
+      const w = WORLDS.find(x => x.id === scoreTab);
+      html += '<div class="scgrid">' + w.list.map(p => {
+        const mine = save.solved[p.id], rows = picBoard(p, list);
+        const show5 = rows.slice(0, 5), me = rows.findIndex(r => r.me);
+        if (me >= 5) show5.push(rows[me]);
+        return `<article class="sccard"><div class="schead">${mine ? `<canvas data-id="${p.id}"></canvas>` : `<div class="scq">${p.pi + 1}</div>`}<div><b>${mine ? p.title : "Bild " + (p.pi + 1)}</b><small>${p.W}×${p.H} · bis ${Math.round(p.N * 1.3)} Punkte</small></div></div>
+          ${show5.length ? `<ol class="lb">${show5.map(r => `<li class="${r.me ? "me" : ""}"><span class="lbr">${r.rank}.</span><span class="lbn">${esc(r.name)}</span><span class="lbs">${"★".repeat(r.stars)}<i>${"★".repeat(3 - r.stars)}</i></span><span class="lbt">${fmtTime(r.time)}</span></li>`).join("")}</ol>` : '<p class="lbw">Noch von niemandem gelöst.</p>'}</article>`;
+      }).join("") + "</div>";
+    }
+    body.innerHTML = html;
+    body.querySelectorAll("canvas[data-id]").forEach(cv => drawMosaic(cv, byId(cv.dataset.id), 64));
+  }
+  $("#btnScores").onclick = () => { AU.init(); AU.ui(); openScores(); };
+  $("#scBack").onclick = () => { AU.ui(); renderHome(); show("home"); };
 
   /* ---------- Bögen ---------- */
   const sheet = $("#sheet");
