@@ -143,7 +143,9 @@
   const rankOf = n => { let i = 0; while (i + 1 < RANKS.length && n >= RANKS[i + 1][0]) i++; return i; };
   const solvedIn = w => w.list.filter(p => save.solved[p.id]).length;
   const NEED = 4;
-  const unlocked = wi => wi === 0 || solvedIn(WORLDS[wi - 1]) >= NEED;
+  // Sonderreihen sind immer offen; reguläre Welten öffnen sich nach der vorigen regulären Welt
+  const prevRegular = wi => { for (let k = wi - 1; k >= 0; k--) if (!WORLDS[k].special) return k; return -1; };
+  const unlocked = wi => { if (WORLDS[wi].special) return true; const p = prevRegular(wi); return p < 0 || solvedIn(WORLDS[p]) >= NEED; };
 
   function setMood(w) {
     const r = document.documentElement.style;
@@ -517,7 +519,7 @@
     const lo = RANKS[rk][0], hi = rk + 1 < RANKS.length ? RANKS[rk + 1][0] : PICS.length * 3;
     requestAnimationFrame(() => { $("#rankBar").style.width = (rk + 1 < RANKS.length ? clamp((st - lo) / (hi - lo)) * 100 : 100) + "%"; });
     $("#starCount").textContent = st + " ★";
-    let top = 0; WORLDS.forEach((w, i) => { if (unlocked(i)) top = i; });
+    let top = 0; WORLDS.forEach((w, i) => { if (unlocked(i) && !w.special) top = i; });
     setMood(WORLDS[top]);
 
     const cw = $("#continueWrap"); cw.innerHTML = "";
@@ -532,13 +534,14 @@
     }
 
     const box = $("#worlds"); box.innerHTML = "";
-    WORLDS.forEach((w, wi) => {
+    const shown = WORLDS.map((w, wi) => [w, wi]).sort((a, b) => (b[0].special ? 1 : 0) - (a[0].special ? 1 : 0));
+    shown.forEach(([w, wi]) => {
       const open = unlocked(wi), n = solvedIn(w);
       const card = document.createElement("article");
-      card.className = "world" + (open ? "" : " locked");
+      card.className = "world" + (open ? "" : " locked") + (w.special ? " special" : "");
       card.style.setProperty("--a", w.mood[0]); card.style.setProperty("--b", w.mood[1]); card.style.setProperty("--c", w.mood[2]);
       const size = w.list[0].W + "×" + w.list[0].H;
-      card.innerHTML = `<header><h2>${w.name}</h2><span class="meta">${size} · ${n}/${w.list.length}</span></header><p>${w.sub}</p><div class="thumbs"></div>`;
+      card.innerHTML = (w.special ? '<span class="badge">Sonderreihe · immer offen</span>' : "") + `<header><h2>${w.name}</h2><span class="meta">${size} · ${n}/${w.list.length}</span></header><p>${w.sub}</p><div class="thumbs"></div>`;
       const th = card.querySelector(".thumbs");
       w.list.forEach(p => {
         const b = document.createElement("button");
@@ -560,7 +563,7 @@
         th.appendChild(b);
       });
       if (!open) {
-        const prev = WORLDS[wi - 1], miss = NEED - solvedIn(prev);
+        const prev = WORLDS[prevRegular(wi)], miss = NEED - solvedIn(prev);
         const l = document.createElement("div"); l.className = "lock";
         l.innerHTML = `<span><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Löse noch ${miss} ${miss === 1 ? "Bild" : "Bilder"} in „${prev.name}“, dann öffnet sich diese Welt.</span>`;
         card.appendChild(l);
@@ -573,6 +576,7 @@
   function nextPic(pref) {
     if (pref && !save.solved[pref.id]) return pref;
     for (let wi = 0; wi < WORLDS.length; wi++) {
+      if (WORLDS[wi].special) continue;
       if (!unlocked(wi)) break;
       const p = WORLDS[wi].list.find(q => !save.solved[q.id]);
       if (p) return p;
@@ -786,7 +790,7 @@
     const hc = $("#hintCnt"); hc.textContent = G.hints; hc.style.display = G.hints ? "grid" : "none";
   }
   // Versuche je Bild: 3 bei kleinen Rastern, 4 bei 15–16, 5 bei 18–20
-  function livesFor(pic) { return 3 + Math.floor((Math.max(pic.W, pic.H) - 10) / 4); }
+  function livesFor(pic) { return 3 + Math.floor((Math.sqrt(pic.W * pic.H) - 10) / 4); }
   function starsFor(g) { const pen = (g.zauber ? g.mistakes : 0) + g.hints; return pen === 0 ? 3 : pen <= 2 ? 2 : 1; }
 
   function setCell(i, v, stroke, delay = 0) {
@@ -1404,7 +1408,7 @@
     if (!G || !G.result) return;
     const pic = G.pic, { rec, rankUp, newWorld } = G.result;
     const allDone = PICS.every(p => save.solved[p.id]);
-    const nxt = nextPic(null);
+    const nxt = pic.w.special ? (pic.w.list.find(q => !save.solved[q.id]) || nextPic(null)) : nextPic(null);
     let extra = "";
     if (rankUp) extra += `<div class="rankup">Neuer Rang: <b>${rankUp}</b></div>`;
     if (newWorld) extra += `<div class="rankup">Eine neue Welt hat sich geöffnet: <b>${newWorld.name}</b></div>`;
