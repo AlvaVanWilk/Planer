@@ -118,7 +118,7 @@
     // Server und Gerät zusammenführen: gelöste Bilder vereinen, Spielstände vom Server
     const merged = Object.assign({}, j.save);
     merged.solved = Object.assign({}, save.solved, j.save.solved || {});
-    for (const id of Object.keys(save.solved)) if (j.save.solved && j.save.solved[id] && j.save.solved[id].stars < save.solved[id].stars) merged.solved[id] = save.solved[id];
+    for (const id of Object.keys(save.solved)) if (j.save.solved && j.save.solved[id] && better(save.solved[id], j.save.solved[id])) merged.solved[id] = save.solved[id];
     merged.prog = Object.assign({}, save.prog, j.save.prog || {});
     if (!G) { useSave(merged); persist(true); if (screen === "home") renderHome(); }
   }
@@ -1273,7 +1273,7 @@
     const unlockedBefore = WORLDS.map((w, i) => unlocked(i));
     const old = save.solved[pic.id];
     const rec = { stars, time: Math.round(G.elapsed), m: G.mistakes, h: G.hints, date: new Date().toISOString().slice(0, 10) };
-    if (!old || stars >= old.stars) save.solved[pic.id] = rec;
+    if (better(rec, old)) save.solved[pic.id] = rec;
     delete save.prog[pic.id];
     persist(true);
     const after = totalStars(), rkAfter = rankOf(after);
@@ -1311,6 +1311,34 @@
     kick();
   }
 
+  // Besser heißt: mehr Sterne, bei gleichen Sternen schneller
+  function better(a, b) { return !b || a.stars > b.stars || (a.stars === b.stars && (a.time || 1e9) < (b.time || 1e9)); }
+
+  /* Bestenliste je Bild (nur mit Konten auf dem Webspace) */
+  async function fetchBoard(id) {
+    if (!ACC.online || !ACC.token) return null;
+    await syncNow();
+    const j = await api({ action: "board", name: ACC.name, token: ACC.token, pic: id });
+    return j.ok ? j : null;
+  }
+  function boardHtml(j, limit = 5) {
+    if (!j || !j.entries || !j.entries.length) return "";
+    const rows = j.entries.slice(0, limit);
+    const me = j.entries.findIndex(e => e.me);
+    if (me >= limit) rows.push(j.entries[me]);
+    return `<ol class="lb">${rows.map(e => `<li class="${e.me ? "me" : ""}"><span class="lbr">${e.rank}.</span><span class="lbn">${esc(e.name)}</span><span class="lbs">${"★".repeat(e.stars)}<i>${"★".repeat(3 - e.stars)}</i></span><span class="lbt">${fmtTime(e.time)}</span></li>`).join("")}</ol>`;
+  }
+  async function fillBoard(slot, id, limit) {
+    if (!slot) return;
+    if (!ACC.online || !ACC.token) { slot.remove(); return; }
+    slot.innerHTML = '<div class="lbh">Bestenliste</div><p class="lbw">wird geladen …</p>';
+    const j = await fetchBoard(id);
+    if (!slot.isConnected) return;
+    const html = boardHtml(j, limit);
+    slot.innerHTML = html ? '<div class="lbh">Bestenliste der Familie</div>' + html : "";
+    if (!$("#win").hidden) fitBoard(true);
+  }
+
   function showCard(on) {
     const box = $("#win");
     if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); return; }
@@ -1329,6 +1357,7 @@
       <div class="bigstars">${[0, 1, 2].map(k => `<i class="${k < rec.stars ? "" : "dim"}">★</i>`).join("")}</div>
       <div class="facts"><span>${fmtTime(rec.time)} min</span>${G.zauber ? `<span>${rec.m} ${rec.m === 1 ? "Fehler" : "Fehler"}</span>` : ""}<span>${rec.h} ${rec.h === 1 ? "Tipp" : "Tipps"}</span></div>
       ${extra}
+      <div class="lbwrap" id="wBoard"></div>
       <div class="row">
         <button class="pill" id="wLook">Bild ansehen</button>
         <button class="pill" id="wHome">Übersicht</button>
@@ -1344,6 +1373,7 @@
     $("#wLook").onclick = () => { AU.ui(); showCard(false); toast("Tippe auf das Bild, um die Karte wieder zu öffnen.", 2600); };
     $("#wHome").onclick = () => { AU.ui(); leaveGame(); };
     if (nxt) $("#wNext").onclick = () => { AU.ui(); startGame(nxt); };
+    fillBoard($("#wBoard"), pic.id, 5);
   }
 
   // Fertiges Bild über die Karte schieben, damit nichts verdeckt wird.
@@ -1474,8 +1504,10 @@
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
       <p style="color:#fff">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
+      <div class="lbwrap" id="vBoard"></div>
       <div class="acts" style="justify-content:center"><button class="pill" id="vAgain">Noch einmal legen</button><button class="pill primary" id="vClose">Schließen</button></div></div>`);
     drawMosaic(el.querySelector("canvas"), p, 440);
+    fillBoard($("#vBoard"), p.id, 10);
     $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
     $("#vAgain").onclick = () => { AU.ui(); closeSheet(); delete save.prog[p.id]; startGame(p); };
   }

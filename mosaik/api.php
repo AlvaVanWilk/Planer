@@ -66,6 +66,13 @@ function findByToken($name, $token) {
   fail('Bitte melde dich neu an.', 401);
 }
 
+// Besser: mehr Sterne, bei gleichen Sternen schneller
+function betterRec($a, $b) {
+  $sa = (int)($a['stars'] ?? 0); $sb = (int)($b['stars'] ?? 0);
+  if ($sa !== $sb) return $sa > $sb;
+  return (int)($a['time'] ?? PHP_INT_MAX) < (int)($b['time'] ?? PHP_INT_MAX);
+}
+
 // Spielstände zusammenführen: gelöste Bilder bleiben, beste Sterne gewinnen
 function mergeSave($old, $new) {
   if (!is_array($old)) return $new;
@@ -73,7 +80,7 @@ function mergeSave($old, $new) {
   $solved = is_array($old['solved'] ?? null) ? $old['solved'] : [];
   foreach (($new['solved'] ?? []) as $id => $rec) {
     if (!is_array($rec)) continue;
-    if (!isset($solved[$id]) || ($rec['stars'] ?? 0) >= ($solved[$id]['stars'] ?? 0)) $solved[$id] = $rec;
+    if (!isset($solved[$id]) || betterRec($rec, $solved[$id])) $solved[$id] = $rec;
   }
   $new['solved'] = (object)$solved;
   return $new;
@@ -139,6 +146,21 @@ switch ($action) {
     $u['updated'] = time();
     writeUser($key, $u);
     out(['ok' => true, 'save' => $u['save']]);
+  }
+  case 'board': {
+    [$key, $me] = findByToken($in['name'] ?? '', $in['token'] ?? '');
+    $pic = (string)($in['pic'] ?? '');
+    if (!preg_match('/^[a-z0-9_-]{1,32}$/', $pic)) fail('Unbekanntes Bild.');
+    $list = [];
+    foreach (glob("$dir/u_*.php") ?: [] as $f) {
+      $u = readUser(substr(basename($f, '.php'), 2));
+      $rec = $u['save']['solved'][$pic] ?? null;
+      if (!is_array($rec) || !isset($rec['time'])) continue;
+      $list[] = ['name' => $u['name'], 'stars' => max(0, min(3, (int)($rec['stars'] ?? 0))), 'time' => max(0, (int)$rec['time']), 'me' => $u['name'] === $me['name']];
+    }
+    usort($list, function ($a, $b) { return $b['stars'] <=> $a['stars'] ?: $a['time'] <=> $b['time']; });
+    foreach ($list as $i => &$e) $e['rank'] = $i + 1;
+    out(['ok' => true, 'entries' => $list]);
   }
   case 'logout': {
     [$key, $u] = findByToken($in['name'] ?? '', $in['token'] ?? '');
