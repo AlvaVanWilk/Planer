@@ -112,6 +112,10 @@ Gerät verfügbar. Dafür braucht der Webspace PHP (ab 7.4; bei IONOS-Webhosting
    Anmeldung. Unter „Neues Konto“ Name, Passwort und Familiencode eingeben.
 4. Den Familiencode an die Familie weitergeben. Danach kann jede Person ihr eigenes Konto anlegen.
 
+Mit Konten gibt es zu jedem Mosaik eine **Bestenliste der Familie**: auf der Karte nach dem
+Lösen und in der Galerie beim Antippen eines Bildes. Gewertet wird zuerst nach Sternen, dann
+nach Zeit. Die Zeit läuft während des Spiels unsichtbar mit, damit niemand gegen die Uhr hetzt.
+
 Beim ersten Aufruf legt `api.php` daneben den Ordner `mosaik-daten/` an. Darin liegt je Konto
 eine Datei. Passwörter sind nur als Hash gespeichert, die Dateien sind über den Browser nicht
 abrufbar. Nach 8 falschen Passwörtern ist ein Konto für 5 Minuten gesperrt; höchstens 30 Konten.
