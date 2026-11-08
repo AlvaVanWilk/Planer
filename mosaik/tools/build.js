@@ -10,6 +10,12 @@ global.window = global;
 require(path.join(root, "src/images.js"));
 const SV = require(path.join(root, "src/solver.js"));
 
+
+// Schwierigkeit je Bild: Grundwert der Welt, innerhalb der Welt leicht ansteigend
+function diffFor(w, p) {
+  const pi = w.pics.indexOf(p), d = w.diff;
+  return Object.assign({ seed: SV.hashStr(p.id) }, d, { remove: d.remove + (pi - 2.5) * (d.ramp || 0) });
+}
 const puzzles = {};
 let fail = 0;
 for (const w of global.MOSAIK_WORLDS) {
@@ -19,7 +25,7 @@ for (const w of global.MOSAIK_WORLDS) {
     const miss = [...new Set(p.art.join(""))].filter(c => c !== "." && !p.pal[c]);
     if (miss.length) throw new Error(p.id + ": Farbe fehlt für " + miss.join(""));
     const sol = [].concat(...p.art.map(r => [...r].map(c => (c !== "." && !(c >= "a" && c <= "z") ? 1 : 0))));
-    const r = SV.build(sol, H, W, Object.assign({ seed: SV.hashStr(p.id) }, w.diff));
+    const r = SV.build(sol, H, W, diffFor(w, p));
     // Gegenprobe: der Löser findet genau das Bild.
     const chk = SV.solve(H, W, r.clues, r.given, { pair: true });
     const same = chk.ok && sol.every((v, i) => chk.st[i] === v);

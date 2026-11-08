@@ -46,18 +46,95 @@
   const byId = id => PICS.find(p => p.id === id);
 
   /* ---------- Speicher ---------- */
-  const KEY = "mosaik.v1";
+  // Spielstand je Person: ohne Konto unter "mosaik.v1", mit Konto unter "mosaik.v1:name"
+  const ANON = "mosaik.v1";
+  let KEY = ANON;
   const DEF = { mode: "zauber", sound: true, music: true, auto: false };
   const save = { solved: {}, prog: {}, set: Object.assign({}, DEF), help: false, last: null };
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (s) { Object.assign(save, s); save.set = Object.assign({}, DEF, s.set || {}); }
-  } catch (e) { /* ohne Speicher spielen */ }
+  function useSave(obj) {
+    for (const k of Object.keys(save)) delete save[k];
+    Object.assign(save, { solved: {}, prog: {}, help: false, last: null }, obj || {});
+    save.set = Object.assign({}, DEF, (obj && obj.set) || {});
+    if (!save.solved || Array.isArray(save.solved)) save.solved = {};
+    if (!save.prog || Array.isArray(save.prog)) save.prog = {};
+    AU.setSound(save.set.sound); AU.setMusic(save.set.music);
+  }
+  function readLocal(key) { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; } }
+  try { const s0 = readLocal(KEY); if (s0) { Object.assign(save, s0); save.set = Object.assign({}, DEF, s0.set || {}); } } catch (e) { /* ohne Speicher spielen */ }
   let saveTimer = 0;
   function persist(immediate) {
     clearTimeout(saveTimer);
-    const go = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* voll oder gesperrt */ } };
+    const go = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* voll oder gesperrt */ } syncLater(immediate); };
     if (immediate) go(); else saveTimer = setTimeout(go, 400);
+  }
+
+  /* ---------- Konten (nur wenn api.php auf dem Webspace läuft) ---------- */
+  const ACC = { online: false, canRegister: false, name: null, token: null, busy: false };
+  const ACCKEY = "mosaik.konto";
+  try { const a = JSON.parse(localStorage.getItem(ACCKEY) || "null"); if (a && a.name && a.token) { ACC.name = a.name; ACC.token = a.token; KEY = ANON + ":" + a.name.toLowerCase(); } } catch (e) { /* kein Konto gemerkt */ }
+  if (KEY !== ANON) { const s1 = readLocal(KEY); useSave(s1); }
+  async function api(body, timeout = 8000) {
+    const ctl = window.AbortController ? new AbortController() : null;
+    const tm = setTimeout(() => ctl && ctl.abort(), timeout);
+    try {
+      const r = await fetch("api.php", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined, keepalive: body.action === "save" });
+      const j = await r.json().catch(() => ({ ok: false, error: "Der Server antwortet nicht richtig." }));
+      j.status = r.status; return j;
+    } catch (e) { return { ok: false, error: "Keine Verbindung zum Server.", status: 0 }; }
+    finally { clearTimeout(tm); }
+  }
+  async function probeServer() {
+    if (location.protocol === "file:") return false;
+    try {
+      const ctl = window.AbortController ? new AbortController() : null;
+      setTimeout(() => ctl && ctl.abort(), 4000);
+      const r = await fetch("api.php", { cache: "no-store", signal: ctl ? ctl.signal : undefined });
+      const j = await r.json();
+      if (j && j.ok && j.app === "mosaik") { ACC.online = true; ACC.canRegister = !!j.register; return true; }
+    } catch (e) { /* kein PHP hier */ }
+    return false;
+  }
+  function rememberAccount() {
+    try { if (ACC.token) localStorage.setItem(ACCKEY, JSON.stringify({ name: ACC.name, token: ACC.token })); else localStorage.removeItem(ACCKEY); } catch (e) { /* egal */ }
+  }
+  let syncT = 0, syncReset = false;
+  function syncLater(now_) {
+    if (!ACC.online || !ACC.token) return;
+    clearTimeout(syncT);
+    syncT = setTimeout(syncNow, now_ ? 0 : 1800);
+  }
+  async function syncNow() {
+    if (!ACC.online || !ACC.token) return;
+    const body = { action: "save", name: ACC.name, token: ACC.token, save };
+    if (syncReset) { body.reset = true; syncReset = false; }
+    const j = await api(body);
+    if (j.status === 401) { signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); }
+  }
+  async function pullServer() {
+    if (!ACC.online || !ACC.token) return;
+    const j = await api({ action: "load", name: ACC.name, token: ACC.token });
+    if (j.status === 401) { signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (!j.ok || !j.save) return;
+    // Server und Gerät zusammenführen: gelöste Bilder vereinen, Spielstände vom Server
+    const merged = Object.assign({}, j.save);
+    merged.solved = Object.assign({}, save.solved, j.save.solved || {});
+    for (const id of Object.keys(save.solved)) if (j.save.solved && j.save.solved[id] && better(save.solved[id], j.save.solved[id])) merged.solved[id] = save.solved[id];
+    merged.prog = Object.assign({}, save.prog, j.save.prog || {});
+    if (!G) { useSave(merged); persist(true); if (screen === "home") renderHome(); }
+  }
+  function signedIn(name, token, serverSave) {
+    ACC.name = name; ACC.token = token; rememberAccount();
+    KEY = ANON + ":" + name.toLowerCase();
+    useSave(serverSave || readLocal(KEY) || {});
+    persist(true);
+    renderHome(); accountPill();
+  }
+  function signedOut(msg) {
+    ACC.token = null; ACC.name = null; rememberAccount();
+    KEY = ANON; useSave(readLocal(ANON) || {});
+    if (G) { G = null; show("home"); }
+    renderHome(); accountPill();
+    openAccount(msg);
   }
   AU.soundOn = save.set.sound; AU.musicOn = save.set.music;
 
@@ -758,7 +835,6 @@
     saveProg();
     kick();
     if (G.actions === 3) coach("zero");
-    if (G.actions === 24) coach("press");
     checkWin();
   }
 
@@ -794,7 +870,8 @@
 
   /* ---------- Eingabe ---------- */
   const ptrs = new Map();
-  let stroke = null, lpTimer = 0, twoTap = null;
+  let stroke = null, twoTap = null, holdTimer = 0;
+  const HOLD = 380;
 
   board.addEventListener("pointerdown", e => {
     AU.init();
@@ -804,27 +881,59 @@
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
     if (ptrs.size === 2) {
-      clearTimeout(lpTimer);
+      clearTimeout(holdTimer);
       if (stroke && now() - stroke.t0 < 350 && !G.zauber) {
         revert(stroke.ch); stroke = null; twoTap = { t: now() }; afterChange();
-      }
+      } else if (stroke && stroke.pending) stroke = null;
       return;
     }
     if (ptrs.size > 2) return;
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0) return;
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false };
-    applyAt(i, stroke);
     G.press = i;
-    afterChange();
-    if (G.pic.clues[i] >= 0 && !G.done) lpTimer = setTimeout(() => longPress(i), 430);
+    clearTimeout(holdTimer);
+    // Maus und Stift: linke Taste = Werkzeug, rechte Taste = leer. Sofort anwenden.
+    if (e.pointerType !== "touch") {
+      const val = e.button === 2 ? 0 : G.tool;
+      stroke = { id: e.pointerId, val, action: !G.zauber && G.st[i] === val ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: false, axis: null };
+      applyAt(i, stroke); afterChange();
+      return;
+    }
+    // Finger: kurz tippen = Werkzeug, gedrückt halten = leer markieren, ziehen = malen
+    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true, axis: null };
+    holdTimer = setTimeout(() => holdEmpty(stroke), HOLD);
+    kick();
   });
+  function commitStart(sk) {
+    if (!sk || !sk.pending) return;
+    sk.pending = false; clearTimeout(holdTimer);
+    applyAt(sk.start, sk);
+    afterChange();
+  }
+  function holdEmpty(sk) {
+    if (!G || G.done || G.over || !sk || sk !== stroke || !sk.pending || sk.last !== sk.start) return;
+    // Halten auf einem schon gelegten Stein ändert nichts (dann wird normal weitergemalt)
+    if (G.zauber && G.st[sk.start] >= 0) return;
+    sk.pending = false;
+    sk.val = 0; sk.action = !G.zauber && G.st[sk.start] === 0 ? "clear" : "set";
+    applyAt(sk.start, sk);
+    afterChange();
+  }
   board.addEventListener("pointermove", e => {
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
-    const i = cellAt(e.clientX, e.clientY);
+    let i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
-    clearTimeout(lpTimer);
+    // Ziehen rastet auf die erste Richtung ein: Reihe oder Spalte
+    const Wd = G.pic.W, sr = Math.floor(stroke.start / Wd), sc = stroke.start % Wd;
+    if (!stroke.axis) {
+      const dr = Math.abs(Math.floor(i / Wd) - sr), dc = Math.abs((i % Wd) - sc);
+      if (dr === dc && dr === 1) return; // erst entscheiden, wenn die Richtung klar ist
+      stroke.axis = dc >= dr ? "row" : "col";
+    }
+    i = stroke.axis === "row" ? sr * Wd + (i % Wd) : Math.floor(i / Wd) * Wd + sc;
+    if (i === stroke.last) return;
+    if (stroke.pending) { commitStart(stroke); if (!stroke || stroke.dead) return; }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
     const r1 = Math.floor(i / W), c1 = i % W;
@@ -837,11 +946,13 @@
     afterChange();
   });
   const up = e => {
+    if (!G) { ptrs.delete(e.pointerId); stroke = null; return; }
     ptrs.delete(e.pointerId);
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
-      clearTimeout(lpTimer);
-      if (stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
+      clearTimeout(holdTimer);
+      if (stroke.pending && G && !G.done && !G.over) commitStart(stroke);
+      if (stroke && stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
       stroke = null;
       if (G) { G.press = -1; hud(); kick(); }
     }
@@ -849,23 +960,6 @@
   board.addEventListener("pointerup", up);
   board.addEventListener("pointercancel", up);
   board.addEventListener("contextmenu", e => e.preventDefault());
-
-  function longPress(i) {
-    if (!G || G.done || !stroke || stroke.start !== i || stroke.last !== i) return;
-    const r = SV.singleStep(G.B, G.pic.clues, G.st, i);
-    if (!r || r.bad) { AU.tick(0.18); toast("Diese Zahl verrät gerade noch nichts Sicheres."); kick(); return; }
-    let k = 0;
-    for (const [x, v] of r) {
-      if (G.zauber && G.pic.sol[x] !== v) continue;
-      if (setCell(x, v, stroke, 45 * k)) {
-        const d = 45 * k;
-        if (v === 1) setTimeout(() => { AU.hit(); if (G) glowAt(x, G.pic.col[x]); }, d);
-        else setTimeout(() => AU.empty(), d);
-        k++;
-      }
-    }
-    afterChange();
-  }
 
   function revert(ch) { for (let k = ch.length - 1; k >= 0; k--) { const [i, from] = ch[k]; G.st[i] = from; G.anim[i] = { t: now(), k: "clear", from: -1 }; } }
   function undo() {
@@ -944,8 +1038,7 @@
     coached[step] = true;
     const msgs = {
       start: "Jede Zahl zählt die Bildfelder in ihrem <b>3×3-Block</b>. Sie selbst zählt mit.",
-      zero: "Fang bei <b>0</b> und <b>9</b> an: Bei 0 bleibt der Block leer, bei 9 gehört alles zum Bild. Am Rand sind es weniger Felder.",
-      press: "Halte eine Zahl <b>gedrückt</b>: Steht ihr Block schon fest, legt Mosaik ihn für dich.",
+      zero: "Fang bei <b>0</b> und <b>9</b> an: Bei 0 bleibt der Block leer, bei 9 gehört alles zum Bild. Leere Felder kannst du auch einfach <b>gedrückt halten</b>.",
     };
     setTimeout(() => toast(msgs[step], 6500), step === "start" ? 700 : 0);
   }
@@ -1041,6 +1134,17 @@
     }
     // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
+    // Ring füllt sich beim Gedrückthalten: dann wird das Feld leer markiert
+    if (!R && stroke && stroke.pending) {
+      const p = clamp((t - stroke.t0) / HOLD), q = stroke.start % W, r = Math.floor(stroke.start / W);
+      if (p > 0.25) {
+        const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * ease((p - 0.25) / 0.75);
+        c.beginPath(); c.arc(L.xs[q] + s / 2, L.ys[r] + s / 2, s * 0.6, a0, a1);
+        c.lineCap = "round"; c.lineWidth = Math.max(2.5, s * 0.07); c.strokeStyle = "rgba(10,8,20,.6)"; c.stroke();
+        c.lineWidth = Math.max(1.4, s * 0.04); c.strokeStyle = "rgba(235,238,255,.95)"; c.stroke();
+      }
+      busy = true;
+    }
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
     // Tipp
@@ -1207,7 +1311,7 @@
   /* ---------- Gewonnen ---------- */
   function win() {
     const pic = G.pic, t = now();
-    G.done = true; G.hint = null; stroke = null; clearTimeout(lpTimer);
+    G.done = true; G.hint = null; stroke = null; 
     for (let i = 0; i < G.N; i++) if (G.st[i] < 0) G.st[i] = pic.sol[i];
     const W = pic.W, li = G.lastI >= 0 ? G.lastI : 0, lr = Math.floor(li / W), lq = li % W;
     const d = new Float32Array(G.N);
@@ -1218,7 +1322,7 @@
     const unlockedBefore = WORLDS.map((w, i) => unlocked(i));
     const old = save.solved[pic.id];
     const rec = { stars, time: Math.round(G.elapsed), m: G.mistakes, h: G.hints, date: new Date().toISOString().slice(0, 10) };
-    if (!old || stars >= old.stars) save.solved[pic.id] = rec;
+    if (better(rec, old)) save.solved[pic.id] = rec;
     delete save.prog[pic.id];
     persist(true);
     const after = totalStars(), rkAfter = rankOf(after);
@@ -1237,7 +1341,7 @@
     if (!G || !G.over) return;
     const pic = G.pic;
     delete save.prog[pic.id]; persist(true);
-    clearTimeout(lpTimer); stroke = null; G.hint = null;
+     stroke = null; G.hint = null;
     $("#game").classList.add("broken", "won");
     AU.broken();
     const box = $("#win");
@@ -1254,6 +1358,34 @@
     $("#oHome").onclick = () => { AU.ui(); leaveGame(); };
     $("#oAgain").onclick = () => { AU.ui(); startGame(pic); };
     kick();
+  }
+
+  // Besser heißt: mehr Sterne, bei gleichen Sternen schneller
+  function better(a, b) { return !b || a.stars > b.stars || (a.stars === b.stars && (a.time || 1e9) < (b.time || 1e9)); }
+
+  /* Bestenliste je Bild (nur mit Konten auf dem Webspace) */
+  async function fetchBoard(id) {
+    if (!ACC.online || !ACC.token) return null;
+    await syncNow();
+    const j = await api({ action: "board", name: ACC.name, token: ACC.token, pic: id });
+    return j.ok ? j : null;
+  }
+  function boardHtml(j, limit = 5) {
+    if (!j || !j.entries || !j.entries.length) return "";
+    const rows = j.entries.slice(0, limit);
+    const me = j.entries.findIndex(e => e.me);
+    if (me >= limit) rows.push(j.entries[me]);
+    return `<ol class="lb">${rows.map(e => `<li class="${e.me ? "me" : ""}"><span class="lbr">${e.rank}.</span><span class="lbn">${esc(e.name)}</span><span class="lbs">${"★".repeat(e.stars)}<i>${"★".repeat(3 - e.stars)}</i></span><span class="lbt">${fmtTime(e.time)}</span></li>`).join("")}</ol>`;
+  }
+  async function fillBoard(slot, id, limit) {
+    if (!slot) return;
+    if (!ACC.online || !ACC.token) { slot.remove(); return; }
+    slot.innerHTML = '<div class="lbh">Bestenliste</div><p class="lbw">wird geladen …</p>';
+    const j = await fetchBoard(id);
+    if (!slot.isConnected) return;
+    const html = boardHtml(j, limit);
+    slot.innerHTML = html ? '<div class="lbh">Bestenliste der Familie</div>' + html : "";
+    if (!$("#win").hidden) fitBoard(true);
   }
 
   function showCard(on) {
@@ -1274,6 +1406,7 @@
       <div class="bigstars">${[0, 1, 2].map(k => `<i class="${k < rec.stars ? "" : "dim"}">★</i>`).join("")}</div>
       <div class="facts"><span>${fmtTime(rec.time)} min</span>${G.zauber ? `<span>${rec.m} ${rec.m === 1 ? "Fehler" : "Fehler"}</span>` : ""}<span>${rec.h} ${rec.h === 1 ? "Tipp" : "Tipps"}</span></div>
       ${extra}
+      <div class="lbwrap" id="wBoard"></div>
       <div class="row">
         <button class="pill" id="wLook">Bild ansehen</button>
         <button class="pill" id="wHome">Übersicht</button>
@@ -1289,6 +1422,7 @@
     $("#wLook").onclick = () => { AU.ui(); showCard(false); toast("Tippe auf das Bild, um die Karte wieder zu öffnen.", 2600); };
     $("#wHome").onclick = () => { AU.ui(); leaveGame(); };
     if (nxt) $("#wNext").onclick = () => { AU.ui(); startGame(nxt); };
+    fillBoard($("#wBoard"), pic.id, 5);
   }
 
   // Fertiges Bild über die Karte schieben, damit nichts verdeckt wird.
@@ -1353,12 +1487,76 @@
   }
   function closeSheet() { sheet.hidden = true; sheet.innerHTML = ""; }
 
+  function accountPill() {
+    const b = $("#btnAccount");
+    b.hidden = !ACC.online;
+    b.lastChild.textContent = ACC.token ? ACC.name : "Anmelden";
+  }
+  function openAccount(msg) {
+    if (ACC.token) {
+      const el = openSheet(`<h2>${esc(ACC.name)}</h2>
+        <p>Dein Fortschritt wird automatisch auf dem Webspace gesichert. Auf einem anderen Gerät meldest du dich einfach mit demselben Namen und Passwort an.</p>
+        <div class="acts"><button class="pill" id="aOut">Abmelden</button><button class="pill primary" id="aClose">Fertig</button></div>`);
+      $("#aClose").onclick = () => { AU.ui(); closeSheet(); };
+      $("#aOut").onclick = async () => { AU.ui(); const t = ACC.token, n = ACC.name; await syncNow(); api({ action: "logout", name: n, token: t }); closeSheet(); signedOut(); };
+      return el;
+    }
+    const anon = readLocal(ANON), anonCount = anon && anon.solved ? Object.keys(anon.solved).length : 0;
+    let mode = "login";
+    const el = openSheet(`<h2>Willkommen bei Mosaik</h2>
+      ${msg ? `<p class="aMsg">${esc(msg)}</p>` : `<p>Mit einem Konto wird dein Fortschritt gesichert und ist auf jedem Gerät da.</p>`}
+      <div class="atabs" role="tablist"><button id="tabIn" class="on" role="tab">Anmelden</button><button id="tabNew" role="tab">Neues Konto</button></div>
+      <form id="accForm" novalidate>
+        <label class="fld">Name<input id="accName" autocomplete="username" autocapitalize="words" spellcheck="false" maxlength="24" required></label>
+        <label class="fld">Passwort<input id="accPw" type="password" autocomplete="current-password" maxlength="200" required></label>
+        <label class="fld reg" hidden>Familiencode<input id="accCode" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        ${anonCount ? `<label class="chk reg" hidden><input type="checkbox" id="accTake" checked> Die ${anonCount} gelösten Bilder auf diesem Gerät übernehmen</label>` : ""}
+        <p class="aErr" id="accErr" role="alert"></p>
+        <div class="acts"><button type="button" class="pill" id="accSkip">Ohne Konto spielen</button><button type="submit" class="pill primary" id="accGo">Anmelden</button></div>
+      </form>`);
+    sheet.onclick = null; // nicht versehentlich wegtippen
+    const setMode = m => {
+      mode = m;
+      $("#tabIn").classList.toggle("on", m === "login"); $("#tabNew").classList.toggle("on", m === "register");
+      el.querySelectorAll(".reg").forEach(x => { x.hidden = m !== "register"; });
+      $("#accPw").setAttribute("autocomplete", m === "login" ? "current-password" : "new-password");
+      $("#accGo").textContent = m === "login" ? "Anmelden" : "Konto anlegen";
+      $("#accErr").textContent = m === "register" && !ACC.canRegister ? "Neue Konten sind auf diesem Webspace noch nicht freigeschaltet (Familiencode fehlt in api.php)." : "";
+    };
+    $("#tabIn").onclick = () => setMode("login");
+    $("#tabNew").onclick = () => setMode("register");
+    $("#accSkip").onclick = () => { AU.ui(); closeSheet(); };
+    $("#accForm").onsubmit = async e => {
+      e.preventDefault();
+      if (ACC.busy) return;
+      const name = $("#accName").value.trim(), password = $("#accPw").value;
+      const err = $("#accErr");
+      if (name.length < 2) { err.textContent = "Bitte gib einen Namen mit mindestens 2 Zeichen ein."; return; }
+      if (password.length < 4) { err.textContent = "Das Passwort braucht mindestens 4 Zeichen."; return; }
+      ACC.busy = true; $("#accGo").disabled = true; err.textContent = "";
+      const body = { action: mode, name, password };
+      if (mode === "register") { body.code = $("#accCode").value.trim(); const tk = $("#accTake"); if (tk && tk.checked && anon) body.save = anon; }
+      const j = await api(body);
+      ACC.busy = false; $("#accGo").disabled = false;
+      if (!j.ok) { err.textContent = j.error || "Das hat nicht geklappt."; return; }
+      AU.init(); AU.star(2);
+      closeSheet();
+      signedIn(j.name, j.token, j.save);
+    };
+    setTimeout(() => { try { $("#accName").focus({ preventScroll: true }); } catch (e) { /* egal */ } }, 300);
+    return el;
+  }
+  const esc = t => String(t).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  $("#btnAccount").onclick = () => { AU.init(); AU.ui(); openAccount(); };
+
   function openView(p) {
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
       <p style="color:#fff">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
+      <div class="lbwrap" id="vBoard"></div>
       <div class="acts" style="justify-content:center"><button class="pill" id="vAgain">Noch einmal legen</button><button class="pill primary" id="vClose">Schließen</button></div></div>`);
     drawMosaic(el.querySelector("canvas"), p, 440);
+    fillBoard($("#vBoard"), p.id, 10);
     $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
     $("#vAgain").onclick = () => { AU.ui(); closeSheet(); delete save.prog[p.id]; startGame(p); };
   }
@@ -1367,8 +1565,8 @@
     const el = openSheet(`<h2>So geht Mosaik</h2>
       <canvas class="demo" width="460" height="460"></canvas>
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
-      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>.</p>
-      <p><b>Gedrückt halten</b> auf einer Zahl legt ihren Block automatisch, sobald er feststeht. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
+      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>. <b>Gedrückt halten</b> markiert ein Feld immer als leer, egal welches Werkzeug gewählt ist – hältst du und ziehst dann weiter, wird die ganze Strecke leer. Am Computer: linke Maustaste für das Werkzeug, <b>rechte Maustaste</b> für leer.</p>
+      <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
       <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
     demo(el.querySelector("canvas"));
@@ -1415,7 +1613,7 @@
       const row = $("#sReset").parentElement;
       row.innerHTML = `<div class="tx"><b>Wirklich alles löschen?</b><small>Das lässt sich nicht rückgängig machen.</small></div><button class="pill" id="sNo">Abbrechen</button><button class="pill danger" id="sYes">Ja, löschen</button>`;
       $("#sNo").onclick = () => { closeSheet(); openSettings(); };
-      $("#sYes").onclick = () => { save.solved = {}; save.prog = {}; save.last = null; persist(true); closeSheet(); renderHome(); };
+      $("#sYes").onclick = () => { save.solved = {}; save.prog = {}; save.last = null; syncReset = true; persist(true); closeSheet(); renderHome(); };
     };
     $("#sClose").onclick = () => { AU.ui(); closeSheet(); };
   }
@@ -1448,6 +1646,12 @@
     } catch (e) { /* Symbole sind Zierde */ }
   })();
   renderHome();
+  probeServer().then(on => {
+    accountPill();
+    if (!on) return;
+    if (ACC.token) pullServer();
+    else openAccount();
+  });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
   try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
   window.__mosaik = { numFont(f, w, z) { NUM.family = f; NUM.weight = w; NUM.size = z || 0.6; numCache.clear(); kick(); }, PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };

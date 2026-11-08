@@ -7,7 +7,7 @@
 window.MOSAIK_WORLDS = [
 {
   id: "garten", name: "Morgengarten", sub: "Tau auf den Blättern",
-  diff: { pair: false, remove: 0.3 },
+  diff: { pair: false, remove: 0.28, ramp: 0.02 },
   mood: ["#2c3b2a", "#16201a", "#b9e08f"],
   music: { root: 60, scale: [0, 2, 4, 7, 9] },
   pics: [
@@ -111,7 +111,7 @@ window.MOSAIK_WORLDS = [
 },
 {
   id: "meer", name: "Gezeitenmeer", sub: "Was die Wellen bringen",
-  diff: { pair: false, remove: 0.5 },
+  diff: { pair: false, remove: 0.4, ramp: 0.02 },
   mood: ["#13324a", "#0a1a2a", "#7fd8e8"],
   music: { root: 62, scale: [0, 2, 4, 7, 9] },
   pics: [
@@ -227,7 +227,7 @@ window.MOSAIK_WORLDS = [
 },
 {
   id: "nacht", name: "Mondnacht", sub: "Wenn die Laternen angehen",
-  diff: { pair: true, remove: 0.6 },
+  diff: { pair: true, remove: 0.5, ramp: 0.02, maxPairs: 6 },
   mood: ["#251c4a", "#110c24", "#c8b6ff"],
   music: { root: 57, scale: [0, 3, 5, 7, 10] },
   pics: [
@@ -360,7 +360,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"fernweh","name":"Fernweh","sub":"Postkarten von unterwegs","diff":{"pair":true,"remove":0.7},"mood":["#3a2a2a","#1c1418","#ffc08a"],"music":{"root":65,"scale":[0,2,4,6,9]},
+  "id":"fernweh","name":"Fernweh","sub":"Postkarten von unterwegs","diff":{"pair":true,"remove":0.57,"ramp":0.02,"maxPairs":9},"mood":["#3a2a2a","#1c1418","#ffc08a"],"music":{"root":65,"scale":[0,2,4,6,9]},
   pics: [
     {"id":"ballon","title":"Heißluftballon","riddle":"Es fliegt ohne Flügel und hat sein Feuer immer dabei.","verse":"Ganz leise treibt er über die Felder, nur der Brenner faucht ab und zu.","bg":["#ffcf9e","#f59fb5"],"pal":{"R":"#e8414f","O":"#ff8c42","Y":"#ffd166","C":"#fff1d6","T":"#3fb8af","B":"#3d6fb6","P":"#8e5bd1","H":"#ffffff","K":"#6b4a3a","W":"#b07a4a","D":"#7a4f2c","c":"#fff4ec"}, art: [
         "................",
@@ -473,7 +473,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"kosmos","name":"Kosmos","sub":"Zwischen den Sternen","diff":{"pair":true,"remove":0.8},"mood":["#151a3a","#070914","#9fb4ff"],"music":{"root":60,"scale":[0,2,4,7,11]},
+  "id":"kosmos","name":"Kosmos","sub":"Zwischen den Sternen","diff":{"pair":true,"remove":0.64,"ramp":0.02,"maxPairs":12},"mood":["#151a3a","#070914","#9fb4ff"],"music":{"root":60,"scale":[0,2,4,7,11]},
   pics: [
     {"id":"rakete","title":"Rakete","riddle":"Sie zählt rückwärts, bevor sie losfliegt.","verse":"Drei, zwei, eins – und der Himmel wird ganz still.","bg":["#0b0f2c","#2b1b52"],"pal":{"R":"#e8414f","W":"#f4f1ea","S":"#c9c6d6","K":"#3a3f5c","G":"#7fd6ff","H":"#e8fbff","D":"#555a7a","O":"#ff8a3a","Y":"#ffe066","s":"#fff6c9","m":"#6f6aa8","p":"#5a4a8a"}, art: [
         "......m....s......",
@@ -598,7 +598,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"fabel","name":"Fabelreich","sub":"Wo die Sagen wohnen","diff":{"pair":true,"remove":0.85},"mood":["#2a1a30","#120a16","#ffb36a"],"music":{"root":62,"scale":[0,2,3,7,9]},
+  "id":"fabel","name":"Fabelreich","sub":"Wo die Sagen wohnen","diff":{"pair":true,"remove":0.69,"ramp":0.02,"maxPairs":16},"mood":["#2a1a30","#120a16","#ffb36a"],"music":{"root":62,"scale":[0,2,3,7,9]},
   pics: [
     {"id":"axolotl","title":"Axolotl","riddle":"Es lächelt immer und kann sich ein verlorenes Bein einfach nachwachsen lassen.","verse":"Ein Wassermolch, der beschlossen hat, für immer jung zu bleiben.","bg":["#9fe6e0","#3a8fb0"],"pal":{"P":"#ffb3c8","H":"#ffd2de","L":"#ffe4ec","G":"#e8508a","F":"#ff86b0","K":"#2a1530","W":"#ffffff","C":"#ff7aa0","M":"#c4507a","o":"#d8fbff","g":"#4fae7a"}, art: [
         ".................o..",

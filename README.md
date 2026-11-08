@@ -97,5 +97,33 @@ eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es 
 - Jedes Rätsel ist eindeutig und ohne Raten lösbar; das prüft der eingebaute Löser beim Bauen.
 - Fortschritt wird im Browser gespeichert. Klänge und Musik werden live erzeugt.
 
+### Mosaik auf dem eigenen Webspace, mit Konten für die Familie
+
+Mit Konten hat jede Person ihren eigenen Fortschritt, gesichert auf dem Webspace und auf jedem
+Gerät verfügbar. Dafür braucht der Webspace PHP (ab 7.4; bei IONOS-Webhosting dabei).
+
+1. Diese drei Dateien aus `mosaik/` in einen Ordner auf dem Webspace hochladen, zum Beispiel
+   `mosaik/`: `index.html`, `icon.png`, `api.php`.
+2. **`api.php` auf dem Webspace** öffnen (im Dateimanager von IONOS oder per FTP) und in der Zeile
+   `const FAMILY_CODE = 'BITTE-AENDERN';` einen eigenen Familiencode eintragen, zum Beispiel
+   `const FAMILY_CODE = 'Sonnenblume42';`. Diesen Code **nicht** hier im Repository eintragen,
+   denn das Repository ist öffentlich.
+3. Die Seite im Browser öffnen, `https://deine-domain.de/mosaik/`. Beim Start erscheint die
+   Anmeldung. Unter „Neues Konto“ Name, Passwort und Familiencode eingeben.
+4. Den Familiencode an die Familie weitergeben. Danach kann jede Person ihr eigenes Konto anlegen.
+
+Mit Konten gibt es zu jedem Mosaik eine **Bestenliste der Familie**: auf der Karte nach dem
+Lösen und in der Galerie beim Antippen eines Bildes. Gewertet wird zuerst nach Sternen, dann
+nach Zeit. Die Zeit läuft während des Spiels unsichtbar mit, damit niemand gegen die Uhr hetzt.
+
+Beim ersten Aufruf legt `api.php` daneben den Ordner `mosaik-daten/` an. Darin liegt je Konto
+eine Datei. Passwörter sind nur als Hash gespeichert, die Dateien sind über den Browser nicht
+abrufbar. Nach 8 falschen Passwörtern ist ein Konto für 5 Minuten gesperrt; höchstens 30 Konten.
+Zum Sichern genügt es, den Ordner `mosaik-daten/` herunterzuladen. Ein Konto löschen heißt,
+seine Datei dort zu löschen.
+
+Ohne PHP (zum Beispiel auf GitHub Pages) läuft Mosaik wie bisher ohne Anmeldung, der
+Fortschritt liegt dann nur im Browser.
+
 `mosaik/index.html` ist erzeugt. Die Quelle liegt in `mosaik/src/` (Bilder in `images.js`),
 neu bauen mit `node mosaik/tools/build.js`.
