@@ -312,13 +312,13 @@ const state = {
   level: 1, def: null, world: null, look: [], cross: [],
   phase: "play", moves: 0, timeLeft: 60, started: false, paused: false,
   undo: [], flashes: [], particles: [], rings: [], hint: null,
-  tangled: new Set(), freeAt: new Map(), activeUntil: 0, zeroSince: 0, solIdx: 0,
+  tangled: new Set(), freeAt: new Map(), activeUntil: 0, zeroSince: 0, nonZeroSince: 0, lastTouch: 0, solIdx: 0,
   win: null, lost: null, outro: null, lastTick: 0, lowSec: -1, lastSave: 0,
 };
 let drag = null; // { pid, r, e, dx, dy, x, y, target, from, snap }
 const N = Rope.N;
 
-function wakePhysics(ms) { state.activeUntil = Math.max(state.activeUntil, now() + (ms || 600)); wake(); }
+function wakePhysics(ms, touch) { const t = now(); state.activeUntil = Math.max(state.activeUntil, t + (ms || 600)); if (touch !== false) state.lastTouch = t; wake(); }
 function ropeLen(r) { const x = state.world.ropes[r].x, i = (N - 1) * 3; return Math.hypot(x[i] - x[0], x[i + 1] - x[1]); }
 // Kordel anzupfen: Schwung quer zur Kordel – die Physik lässt sie schwingen
 function pluck(r, strength, silent) {
@@ -332,7 +332,7 @@ function pluck(r, strength, silent) {
   }
   state.look[r].glowT = now();
   if (!silent) Sound.pluck(ropeLen(r), 0, 0.06 + 0.06 * strength);
-  wakePhysics(1500);
+  wakePhysics(1500, !!state.win);
 }
 
 function loadLevel(level, opts = {}) {
@@ -693,8 +693,11 @@ function update(t, dt) {
     if (k >= 1) cam.tw = null; busy = true;
   }
   // Physik, solange sich etwas bewegt
-  if (state.world && (drag || t < state.activeUntil)) {
-    Rope.step(state.world, dt || 1 / 60);
+  // Physik läuft beim Ziehen und danach, bis alles ruht – spätestens 3 s nach dem letzten Griff schläft sie ein
+  if (state.world && (drag || (t < state.activeUntil && t - state.lastTouch < 3000))) {
+    // feste Zeitschritte wie bei der Level-Erzeugung – gleiches Verhalten auf jedem Gerät
+    state.acc = Math.min((state.acc || 0) + (dt || 1 / 60), 3 / 60);
+    while (state.acc >= 1 / 60 - 1e-6) { Rope.step(state.world, 1 / 60); state.acc -= 1 / 60; }
     if (Rope.motion(state.world) > 4e-4) state.activeUntil = Math.max(state.activeUntil, t + 250);
     if (frameNo % 2 === 0 || !drag) {
       state.cross = Rope.crossings(state.world);
@@ -715,10 +718,15 @@ function update(t, dt) {
   // gelöst? – erst wenn nichts mehr kreuzt und die Kordeln zur Ruhe kommen
   if (state.phase === "play" && !drag && state.world) {
     if (state.cross.length === 0) {
+      state.nonZeroSince = 0;
       if (!state.zeroSince) state.zeroSince = t;
       if (t - state.zeroSince > 450) solve();
       busy = true;
-    } else state.zeroSince = 0;
+    } else {
+      // kurzes Zittern an einer Berührungsstelle zählt nicht als neue Kreuzung
+      if (!state.nonZeroSince) state.nonZeroSince = t;
+      if (t - state.nonZeroSince > 200) state.zeroSince = 0;
+    }
   }
   for (const L of state.look) {
     L.alpha = L.intro ? clamp((t - L.intro) / 450, 0, 1) : 1;

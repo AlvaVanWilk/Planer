@@ -168,10 +168,17 @@
   function pinEnds(w, h) {
     w.ropes.forEach((R, r) => {
       for (let e = 0; e < 2; e++) {
-        const T = endTarget(w, r, e), j = endIdx(e) * 3, x = R.x;
-        const dx = T.x - x[j], dy = T.y - x[j + 1], dz = T.z - x[j + 2], L = Math.hypot(dx, dy, dz), m = SPEED * h;
-        if (L <= m) { x[j] = T.x; x[j + 1] = T.y; x[j + 2] = T.z; }
-        else { x[j] += (dx / L) * m; x[j + 1] += (dy / L) * m; x[j + 2] += (dz / L) * m; }
+        const T = endTarget(w, r, e), j = endIdx(e) * 3, x = R.x, m = SPEED * h;
+        const dx = T.x - x[j], dy = T.y - x[j + 1], dh = Math.hypot(dx, dy);
+        // erst ganz anheben, dann führen – und erst über der Öse wieder absenken
+        if (dh > 0.02 && x[j + 2] < LIFT - 0.02) { x[j + 2] = Math.min(LIFT, x[j + 2] + m * 1.5); continue; }
+        if (dh > 1e-6) {
+          if (dh <= m) { x[j] = T.x; x[j + 1] = T.y; }
+          else { x[j] += (dx / dh) * m; x[j + 1] += (dy / dh) * m; }
+          continue;
+        }
+        const dz = T.z - x[j + 2];
+        x[j + 2] += Math.abs(dz) <= m * 1.5 ? dz : Math.sign(dz) * m * 1.5;
       }
     });
   }
