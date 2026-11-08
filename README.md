@@ -62,11 +62,16 @@ Im Ordner `knoten/` liegt ein Rätselspiel für iPad und Handy, ebenfalls eine
 einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
 `https://BENUTZERNAME.github.io/REPONAME/knoten/`.
 
-- Perlen sind mit Fäden verbunden. Ziehe die Perlen, bis sich kein Faden mehr kreuzt –
-  kupferrot leuchtende Fäden kreuzen sich noch.
-- Mehrere Finger können gleichzeitig ziehen. Zwei Finger auf freier Fläche zoomen,
-  doppelt tippen setzt die Ansicht zurück.
+- Perlen sind mit Fäden verbunden und sitzen auf festen Plätzen. Zieht man eine Perle auf eine
+  andere, tauschen die beiden die Plätze (oder: erst eine antippen, dann die andere).
+  Ziel: kein Faden kreuzt mehr – kupferrot leuchtende Fäden kreuzen sich noch.
+- Jeder Tausch kostet einen Zug. Die Punkte oben sind das Zugbudget: goldene Punkte sind das
+  Ideal, graue die Reserve. Wer mit dem Ideal löst, bekommt drei Sterne; sind alle Züge
+  verbraucht, ist der Knoten verheddert und es geht von vorn los.
+- Während des Ziehens wird nichts neu bewertet – erst denken, dann tauschen.
+- Jedes Level ist fest und garantiert lösbar: Es entsteht aus einem kreuzungsfreien Netz, in
+  dem Perlen in Zweier-, später auch Dreier- und Viererkreisen vertauscht werden. Kein
+  einzelner Tausch löst es vorzeitig.
+- Die Glühbirne zeigt eine falsch liegende Perle und kostet einen Zug.
+- Zwei Finger auf freier Fläche zoomen, doppelt tippen setzt die Ansicht zurück.
 - Jeder gelöste Knoten wird zu einem Bleiglasfenster; im Menü liegen alle als Galerie.
-- Unendlich viele Level, in Kapiteln zu je zehn mit eigener Farbstimmung. Jedes Level ist
-  garantiert lösbar (es wird aus einem kreuzungsfreien Netz erzeugt und dann verwirrt).
-- Rückgängig-Knopf, Glühbirne zeigt die verworrenste Perle. Fortschritt wird im Browser gespeichert.

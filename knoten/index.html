@@ -42,7 +42,6 @@
     position: fixed; left: 0; right: 0; top: 0; z-index: 5; pointer-events: none;
     padding: calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 14px) 0 calc(env(safe-area-inset-left) + 14px);
     display: flex; align-items: flex-start; gap: 10px;
-    transition: opacity .5s ease;
   }
   .hud > * { pointer-events: auto; }
   .ib {
@@ -58,11 +57,24 @@
   .ttl { flex: 1; min-width: 0; text-align: center; padding-top: 1px; pointer-events: none; }
   .ttl .ch { font-size: 10.5px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--muted); }
   .ttl .lv { font-family: var(--serif); font-size: 22px; line-height: 1.15; margin-top: 3px; letter-spacing: 0.01em; }
-  .prog { width: min(150px, 38vw); height: 2px; margin: 8px auto 0; background: var(--line); border-radius: 2px; overflow: hidden; }
-  .prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width .45s cubic-bezier(.2,.8,.2,1); }
   .rbtns { display: flex; gap: 8px; }
   .hint-on { animation: hintpulse 1.6s ease; }
   @keyframes hintpulse { 30% { background: rgba(220,188,128,0.18); border-color: rgba(220,188,128,0.5); } }
+
+  /* Zugbudget als Punkte */
+  #dots { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 9px auto 0; max-width: 190px; }
+  #dots i {
+    width: 7px; height: 7px; border-radius: 50%; box-sizing: border-box;
+    background: var(--gold); border: 1px solid var(--gold);
+    box-shadow: 0 0 6px rgba(220,188,128,0.45);
+    transition: background .35s ease, box-shadow .35s ease, transform .35s cubic-bezier(.3,1.6,.5,1), border-color .35s;
+  }
+  #dots i.extra { background: rgba(236,228,212,0.45); border-color: rgba(236,228,212,0.45); box-shadow: none; }
+  #dots i.used { background: transparent; box-shadow: none; transform: scale(0.8); border-color: rgba(236,228,212,0.22); }
+  #dots i.last { animation: lastdot 1.3s ease-in-out infinite; }
+  @keyframes lastdot { 50% { background: var(--coral); border-color: var(--coral); box-shadow: 0 0 9px rgba(224,138,109,0.8); } }
+  #dots i.pop { animation: dotpop .45s ease; }
+  @keyframes dotpop { 40% { transform: scale(1.7); } }
 
   #pill {
     position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 18px); transform: translateX(-50%);
@@ -71,7 +83,8 @@
     -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); font-variant-numeric: tabular-nums;
     transition: opacity .5s, color .3s, border-color .3s, transform .3s; z-index: 4;
   }
-  #pill.zero { color: var(--gold); border-color: rgba(220,188,128,0.45); }
+  #pill.warn { color: var(--coral); border-color: rgba(224,138,109,0.45); }
+  #pill.info { color: var(--gold); border-color: rgba(220,188,128,0.45); }
   #pill.bump { transform: translateX(-50%) scale(1.06); }
   #pill.hide { opacity: 0; }
   #tip {
@@ -82,7 +95,7 @@
   }
   #tip.show { opacity: 0.88; transform: translate(-50%, 0); }
 
-  /* ---------- Gelöst-Karte ---------- */
+  /* ---------- Ergebnis-Karte ---------- */
   #card {
     position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 16px); z-index: 6;
     width: min(420px, calc(100vw - 28px)); padding: 22px 20px 18px; text-align: center;
@@ -100,7 +113,17 @@
     letter-spacing: 0.3em; opacity: 0; transition: letter-spacing 1.4s cubic-bezier(.16,1,.3,1), opacity 1s ease;
   }
   #card.show h2 { letter-spacing: 0.02em; opacity: 1; }
-  .stats { display: flex; justify-content: center; gap: 28px; margin: 14px 0 4px; }
+  #card.lost h2 { color: var(--ink); }
+  .stars { display: flex; justify-content: center; gap: 16px; margin: 12px 0 4px; height: 22px; }
+  #card.lost .stars { display: none; }
+  .stars i {
+    width: 15px; height: 15px; transform: rotate(45deg) scale(0.4); opacity: 0; border-radius: 2px;
+    border: 1.5px solid rgba(220,188,128,0.5); margin-top: 3px;
+    transition: transform .6s cubic-bezier(.3,1.8,.5,1), opacity .4s ease, background .3s, box-shadow .3s;
+  }
+  .stars i.in { opacity: 1; transform: rotate(45deg) scale(1); }
+  .stars i.on { background: linear-gradient(135deg, #fff1cf, #dcbc80 55%, #a98446); border-color: #f3e2b8; box-shadow: 0 0 14px rgba(232,196,128,0.65); }
+  .stats { display: flex; justify-content: center; gap: 28px; margin: 12px 0 4px; }
   .stats div { display: flex; flex-direction: column; gap: 2px; opacity: 0; transform: translateY(6px); transition: opacity .6s ease, transform .6s ease; }
   #card.show .stats div { opacity: 1; transform: none; }
   #card.show .stats div:nth-child(1) { transition-delay: .25s; }
@@ -108,7 +131,7 @@
   #card.show .stats div:nth-child(3) { transition-delay: .45s; }
   .stats b { font-family: var(--serif); font-weight: 400; font-size: 21px; font-variant-numeric: tabular-nums; }
   .stats span { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
-  .note { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 15px; margin-top: 10px; min-height: 0; }
+  .note { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 15px; line-height: 1.4; margin-top: 10px; }
   .note:empty { display: none; }
   .row { display: flex; gap: 10px; margin-top: 16px; }
   .btn {
@@ -147,6 +170,7 @@
   .tg.on { color: var(--ink); }
   .tg.on i { background: var(--gold); box-shadow: 0 0 8px rgba(220,188,128,0.7); }
   .tg:active { transform: scale(0.96); }
+  .total { margin-left: auto; align-self: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .chap { margin-top: 26px; }
   .chap h3 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; font-weight: 400; }
   .chap h3 b { font-family: var(--serif); font-weight: 400; font-size: 21px; }
@@ -162,6 +186,9 @@
   .tile canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   .tile .n { position: relative; font-family: var(--serif); font-size: 17px; color: var(--muted); }
   .tile.solved .n { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  .tile .st { position: absolute; left: 7px; bottom: 7px; display: flex; gap: 3px; }
+  .tile .st i { width: 4px; height: 4px; transform: rotate(45deg); background: rgba(255,255,255,0.22); }
+  .tile .st i.on { background: var(--gold2); box-shadow: 0 0 4px rgba(243,226,184,0.8); }
   .tile.cur { border-color: rgba(220,188,128,0.6); box-shadow: 0 0 0 1px rgba(220,188,128,0.25), 0 0 18px -4px rgba(220,188,128,0.5); }
   .tile.cur .n { color: var(--gold2); }
   .tile.locked { cursor: default; opacity: 0.35; }
@@ -184,13 +211,13 @@
   <div class="ttl">
     <div class="ch" id="tChap">Leinen</div>
     <div class="lv" id="tLevel">Level 1</div>
-    <div class="prog"><i id="tProg"></i></div>
+    <div id="dots"></div>
   </div>
   <div class="rbtns">
-    <button class="ib" id="bUndo" aria-label="Rückgängig" disabled>
-      <svg viewBox="0 0 24 24"><path d="M9 7 5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/></svg>
+    <button class="ib" id="bRestart" aria-label="Neu beginnen">
+      <svg viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>
     </button>
-    <button class="ib" id="bHint" aria-label="Tipp">
+    <button class="ib" id="bHint" aria-label="Tipp (kostet einen Zug)">
       <svg viewBox="0 0 24 24"><path d="M9.5 17.5h5M10 20.5h4"/><path d="M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5 1 1.2 1 2v.5h4.4v-.5c0-.8.4-1.5 1-2A5.5 5.5 0 0 0 12 3.5z"/></svg>
     </button>
   </div>
@@ -202,15 +229,16 @@
 <div id="card">
   <div class="cap" id="cCap">Level 1 · Leinen</div>
   <h2 id="cTitle">Entwirrt</h2>
+  <div class="stars" id="cStars"><i></i><i></i><i></i></div>
   <div class="stats">
-    <div><b id="cTime">0:00</b><span>Zeit</span></div>
     <div><b id="cMoves">0</b><span>Züge</span></div>
-    <div><b id="cNodes">0</b><span>Perlen</span></div>
+    <div><b id="cPar">0</b><span>Ideal</span></div>
+    <div><b id="cTime">0:00</b><span>Zeit</span></div>
   </div>
   <div class="note" id="cNote"></div>
   <div class="row">
-    <button class="btn ghost" id="cAgain">Nochmal</button>
-    <button class="btn" id="cNext">Weiter</button>
+    <button class="btn ghost" id="cAlt">Nochmal</button>
+    <button class="btn" id="cMain">Weiter</button>
   </div>
 </div>
 
@@ -225,10 +253,10 @@
     <div class="opts">
       <button class="tg" id="oSound"><i></i>Klang</button>
       <button class="tg" id="oVib"><i></i>Vibration</button>
-      <button class="tg" id="oShuffle">Neu mischen</button>
+      <span class="total" id="mTotal"></span>
     </div>
     <div id="chapters"></div>
-    <div class="foot">Ziehe die Perlen, bis sich kein Faden mehr kreuzt.<br>Jeder gelöste Knoten wird zu einem Fenster aus Glas.</div>
+    <div class="foot">Tausche Perlen, bis sich kein Faden mehr kreuzt.<br>Jeder Tausch kostet einen Zug – erst denken, dann tauschen.<br>Jeder gelöste Knoten wird zu einem Fenster aus Glas.</div>
   </div>
 </div>
 
@@ -248,6 +276,7 @@ const eInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 const eIn = (t) => t * t * t;
 const eBack = (t) => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
 const now = () => performance.now();
+const range = (n) => Array.from({ length: n }, (_, i) => i);
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -276,8 +305,7 @@ function segCross(a, b, c, d) {
 function distPtSeg2(p, a, b) {
   const vx = b.x - a.x, vy = b.y - a.y, wx = p.x - a.x, wy = p.y - a.y;
   const L = vx * vx + vy * vy;
-  let t = L ? (wx * vx + wy * vy) / L : 0;
-  t = clamp(t, 0, 1);
+  const t = clamp(L ? (wx * vx + wy * vy) / L : 0, 0, 1);
   const dx = a.x + vx * t - p.x, dy = a.y + vy * t - p.y;
   return dx * dx + dy * dy;
 }
@@ -304,16 +332,57 @@ const THREAD = hex("#e9dfc9");
 const CORAL = hex("#e08a6d");
 const GOLD = hex("#dcbc80");
 const GOLD_HI = hex("#f6e4bb");
+const ASH = hex("#8a8278");
+
+/* ---------- Kreuzungen zählen ---------- */
+const TOUCH_EPS2 = 4.5 * 4.5;
+function conflicts(P, edges, withScore, early) {
+  const E = edges.length, crossed = new Uint8Array(E);
+  const score = withScore ? new Array(P.length).fill(0) : null;
+  let count = 0;
+  for (let a = 0; a < E; a++) {
+    const i = edges[a][0], j = edges[a][1], A = P[i], B = P[j];
+    const minx = Math.min(A.x, B.x), maxx = Math.max(A.x, B.x), miny = Math.min(A.y, B.y), maxy = Math.max(A.y, B.y);
+    for (let b = a + 1; b < E; b++) {
+      const k = edges[b][0], l = edges[b][1];
+      if (k === i || k === j || l === i || l === j) continue;
+      const C = P[k], D = P[l];
+      if (Math.max(C.x, D.x) < minx || Math.min(C.x, D.x) > maxx || Math.max(C.y, D.y) < miny || Math.min(C.y, D.y) > maxy) continue;
+      if (segCross(A, B, C, D)) {
+        count++; crossed[a] = 1; crossed[b] = 1;
+        if (early) return { count };
+        if (score) { score[i]++; score[j]++; score[k]++; score[l]++; }
+      }
+    }
+    for (let m = 0; m < P.length; m++) {
+      if (m === i || m === j) continue;
+      const p = P[m];
+      if (p.x < minx - 5 || p.x > maxx + 5 || p.y < miny - 5 || p.y > maxy + 5) continue;
+      if (distPtSeg2(p, A, B) < TOUCH_EPS2) {
+        count++; crossed[a] = 1;
+        if (early) return { count };
+        if (score) { score[m] += 2; score[i]++; score[j]++; }
+      }
+    }
+  }
+  return { count, crossed, score };
+}
 
 /* =====================================================================
-   Level-Erzeugung: zufällige ebene Graphen (garantiert lösbar)
+   Level-Erzeugung
+   1. zufälliges ebenes Netz (Lösung) auf festen Plätzen
+   2. Perlen werden in Zyklen vertauscht – die Zahl der nötigen Tausche
+      ist damit bekannt und ergibt das Ideal ("Par")
    ===================================================================== */
+const BW = 0.75;          // Hochformat-Kasten 0.75 × 1, im Querformat gedreht
+const GEN_PX = 440;       // Maßstab, in dem der Erzeuger Kreuzungen prüft
 function levelParams(level) {
   const L = level - 1;
   return {
-    n: Math.min(44, 5 + Math.floor(L * 0.75)),
-    k: Math.min(2.25, 1.2 + L * 0.018),
-    maxDeg: Math.min(6, 3 + Math.floor(L / 12)),
+    n: Math.min(40, 6 + Math.floor(L * 0.55)),
+    k: Math.min(2.2, 1.35 + L * 0.015),
+    maxDeg: Math.min(6, 3 + Math.floor(L / 10)),
+    par: Math.min(12, 1 + Math.floor(L / 4)),
   };
 }
 function connected(n, edges) {
@@ -323,23 +392,19 @@ function connected(n, edges) {
   while (st.length) { const u = st.pop(); for (const v of adj[u]) if (!seen[v]) { seen[v] = 1; c++; st.push(v); } }
   return c === n;
 }
-function scatterUnit(n, rng) {
-  const pts = []; let minD = 0.78 / Math.sqrt(n), tries = 0;
+function scatterBox(n, rng) {
+  const pts = []; let minD = 0.8 * Math.sqrt(BW / n), tries = 0;
   while (pts.length < n) {
-    const p = { x: 0.05 + rng() * 0.9, y: 0.05 + rng() * 0.9 };
+    const p = { x: 0.04 + rng() * (BW - 0.08), y: 0.04 + rng() * 0.92 };
     if (pts.every((q) => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 > minD * minD)) pts.push(p);
     if (++tries > 3000) { minD *= 0.92; tries = 0; }
   }
   return { pts, minD };
 }
-const graphCache = new Map();
-function genGraph(level) {
-  if (graphCache.has(level)) return graphCache.get(level);
-  const { n, k, maxDeg } = levelParams(level);
-  const rng = mulberry32(((level * 2654435761) ^ 0x5bd1e995) >>> 0);
+function buildNet(n, k, maxDeg, rng) {
   let best = null, bestScore = Infinity;
   for (let attempt = 0; attempt < 30; attempt++) {
-    const { pts, minD } = scatterUnit(n, rng);
+    const { pts, minD } = scatterBox(n, rng);
     const cand = [];
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++)
       cand.push([i, j, (pts[i].x - pts[j].x) ** 2 + (pts[i].y - pts[j].y) ** 2]);
@@ -360,7 +425,6 @@ function genGraph(level) {
       edges.push([i, j]); deg[i]++; deg[j]++;
     }
     if (!connected(n, edges)) continue;
-    // ausdünnen bis zur Zieldichte, ohne Zusammenhang und Mindestgrad 2 zu verlieren
     const target = Math.round(n * k);
     for (const e of shuffle(edges.slice(), rng)) {
       if (edges.length <= target) break;
@@ -371,44 +435,65 @@ function genGraph(level) {
       edges = without; deg[i]--; deg[j]--;
     }
     const score = deg.filter((d) => d < 2).length * 10 + Math.abs(edges.length - target);
-    if (score < bestScore) { bestScore = score; best = { n, edges, sol: pts }; }
+    if (score < bestScore) { bestScore = score; best = { edges, sol: pts }; }
     if (deg.every((d) => d >= 2)) break;
   }
-  graphCache.set(level, best);
   return best;
 }
-
-/* ---------- Kreuzungen zählen ---------- */
-const TOUCH_EPS2 = 4.5 * 4.5;
-function conflicts(P, edges, withScore) {
-  const E = edges.length, crossed = new Uint8Array(E);
-  const score = withScore ? new Array(P.length).fill(0) : null;
-  let count = 0;
-  for (let a = 0; a < E; a++) {
-    const i = edges[a][0], j = edges[a][1], A = P[i], B = P[j];
-    const minx = Math.min(A.x, B.x), maxx = Math.max(A.x, B.x), miny = Math.min(A.y, B.y), maxy = Math.max(A.y, B.y);
-    for (let b = a + 1; b < E; b++) {
-      const k = edges[b][0], l = edges[b][1];
-      if (k === i || k === j || l === i || l === j) continue;
-      const C = P[k], D = P[l];
-      if (Math.max(C.x, D.x) < minx || Math.min(C.x, D.x) > maxx || Math.max(C.y, D.y) < miny || Math.min(C.y, D.y) > maxy) continue;
-      if (segCross(A, B, C, D)) {
-        count++; crossed[a] = 1; crossed[b] = 1;
-        if (score) { score[i]++; score[j]++; score[k]++; score[l]++; }
-      }
+function scrambleNet(level, n, edges, sol, par, rng) {
+  const P0 = sol.map((p) => ({ x: p.x * GEN_PX, y: p.y * GEN_PX }));
+  const count = (slot, early) => conflicts(slot.map((s) => P0[s]), edges, false, early).count;
+  let fallback = null;
+  for (let attempt = 0; attempt < 120; attempt++) {
+    // Zyklenlängen festlegen: Zyklus der Länge L braucht L-1 Tausche
+    const lens = []; let rem = par;
+    while (rem > 0) {
+      let len = 2;
+      if (level >= 8 && rem >= 2 && rng() < 0.4) len = 3;
+      if (level >= 25 && rem >= 3 && rng() < 0.25) len = 4;
+      lens.push(len); rem -= len - 1;
     }
-    for (let m = 0; m < P.length; m++) {
-      if (m === i || m === j) continue;
-      const p = P[m];
-      if (p.x < minx - 5 || p.x > maxx + 5 || p.y < miny - 5 || p.y > maxy + 5) continue;
-      if (distPtSeg2(p, A, B) < TOUCH_EPS2) {
-        count++; crossed[a] = 1;
-        if (score) { score[m] += 2; score[i]++; score[j]++; }
-      }
+    const need = lens.reduce((a, b) => a + b, 0);
+    if (need > n) continue;
+    const pick = shuffle(range(n), rng).slice(0, need);
+    const slot = range(n), cycles = [];
+    let idx = 0;
+    for (const len of lens) {
+      const c = pick.slice(idx, idx + len); idx += len; cycles.push(c);
+      c.forEach((b, j) => (slot[b] = c[(j + 1) % len]));
     }
+    // jeder Zyklus muss für sich Kreuzungen erzeugen
+    const each = cycles.every((c) => { const s = range(n); c.forEach((b, j) => (s[b] = c[(j + 1) % c.length])); return count(s, true) > 0; });
+    if (!each) continue;
+    if (!fallback) fallback = slot.slice();
+    // kein einzelner Tausch darf das Rätsel vorzeitig lösen
+    if (par >= 2) {
+      let shortcut = false;
+      for (let a = 0; a < n && !shortcut; a++) for (let b = a + 1; b < n; b++) {
+        [slot[a], slot[b]] = [slot[b], slot[a]];
+        const c = count(slot, true);
+        [slot[a], slot[b]] = [slot[b], slot[a]];
+        if (c === 0) { shortcut = true; break; }
+      }
+      if (shortcut) continue;
+    }
+    return slot;
   }
-  return { count, crossed, score };
+  return fallback || range(n);
 }
+const graphCache = new Map();
+function genLevel(level) {
+  if (graphCache.has(level)) return graphCache.get(level);
+  const { n, k, maxDeg, par } = levelParams(level);
+  const rng = mulberry32(((level * 2654435761) ^ 0x2f6b9c11) >>> 0);
+  const { edges, sol } = buildNet(n, k, maxDeg, rng);
+  const start = scrambleNet(level, n, edges, sol, par, rng);
+  const extra = Math.max(1, Math.round(par * 0.4));
+  const g = { n, edges, sol, start, par, limit: par + extra, extra };
+  graphCache.set(level, g);
+  return g;
+}
+function starsFor(g, moves) { return moves <= g.par ? 3 : moves <= g.par + Math.ceil(g.extra / 2) ? 2 : 1; }
 
 /* ---------- Flächen der ebenen Einbettung (für das Glasfenster) ---------- */
 function computeFaces(P, edges, n) {
@@ -471,16 +556,22 @@ function colorFaces(faces, level, palette) {
 /* =====================================================================
    Speicher
    ===================================================================== */
-const STORE = "knoten:v1";
+const STORE = "knoten:v2";
 let save = { unlocked: 1, solved: {}, cur: null, sound: true, vib: true, tips: {} };
-try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s) save = Object.assign(save, s); } catch (e) {}
+try {
+  const s = JSON.parse(localStorage.getItem(STORE) || "null");
+  if (s) save = Object.assign(save, s);
+  else {
+    const old = JSON.parse(localStorage.getItem("knoten:v1") || "null");
+    if (old) { save.sound = old.sound !== false; save.vib = old.vib !== false; }
+  }
+} catch (e) {}
 let saveTimer = 0;
 function persist(soon) {
   clearTimeout(saveTimer);
   const go = () => { try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) {} };
   if (soon) saveTimer = setTimeout(go, 250); else go();
 }
-const packPos = (nodes) => nodes.flatMap((n) => [Math.round(n.u * 1e4) / 1e4, Math.round(n.v * 1e4) / 1e4]);
 
 /* =====================================================================
    Klang – sanfte, gezupfte Glastöne mit Hall
@@ -533,21 +624,28 @@ const Sound = {
   SCALE: [293.66, 329.63, 369.99, 440, 493.88, 587.33, 659.25, 739.99, 880, 987.77, 1174.66, 1318.5],
   pick() { this.tone(220, { dur: 0.22, vol: 0.05, bright: 1100, rev: 0.25 }); },
   drop() { this.tone(196, { dur: 0.3, vol: 0.035, bright: 800, rev: 0.2 }); },
+  swap() {
+    this.tone(329.63, { dur: 0.5, vol: 0.05, bright: 1600, rev: 0.4 });
+    this.tone(440, { t: 0.07, dur: 0.5, vol: 0.045, bright: 1600, rev: 0.4 });
+  },
   progress(p) {
-    const t = now(); if (t - this.last < 70) return; this.last = t;
     const i = clamp(Math.round(p * (this.SCALE.length - 3)), 0, this.SCALE.length - 1);
     this.tone(this.SCALE[i], { dur: 1.6, vol: 0.12, bright: 3200, bell: true });
   },
-  worse() {
-    const t = now(); if (t - this.last < 110) return; this.last = t;
-    this.tone(146.83, { dur: 0.5, vol: 0.05, bright: 700, rev: 0.3 });
-  },
+  worse() { this.tone(146.83, { dur: 0.6, vol: 0.06, bright: 700, rev: 0.3 }); },
+  warn() { this.tone(207.65, { dur: 0.9, vol: 0.05, bright: 900, rev: 0.5 }); },
   win(steps) {
     const chord = [293.66, 369.99, 440, 554.37, 659.25, 739.99, 880, 1108.73, 1318.5];
     const n = clamp(steps, 4, chord.length);
     for (let i = 0; i < n; i++) this.tone(chord[i], { t: 0.05 + i * 0.11, dur: 2.6, vol: 0.13 - i * 0.006, bright: 4200, bell: true });
     this.pad([146.83, 220, 293.66, 369.99], 0.05, 4.2, 0.022);
     this.tone(1760, { t: 0.05 + n * 0.11 + 0.2, dur: 3, vol: 0.04, bright: 6000, bell: true, rev: 1 });
+  },
+  star(i) { this.tone([1174.66, 1318.5, 1760][i], { dur: 1.8, vol: 0.06, bright: 6000, bell: true, rev: 0.9 }); },
+  lose() {
+    this.tone(220, { dur: 2.4, vol: 0.07, bright: 900, rev: 0.8 });
+    this.tone(174.61, { t: 0.18, dur: 2.6, vol: 0.06, bright: 800, rev: 0.8 });
+    this.tone(146.83, { t: 0.36, dur: 3, vol: 0.06, bright: 700, rev: 0.8 });
   },
 };
 
@@ -569,6 +667,7 @@ const canvas = $("#c"), ctx = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1, R = 11, LW = 2;
 const safe = { t: 0, r: 0, b: 0, l: 0 };
 const T = { x: 0, y: 0, w: 1, h: 1 };
+const FIT = { land: false, s: 1, ox: 0, oy: 0 };
 const cam = { s: 1, ox: 0, oy: 0, tw: null };
 let sprites = {};
 
@@ -633,7 +732,6 @@ function buildSprites() {
     bead: makeBead(R, "#fffaf0", "#e4d9c2", "#9f937b"),
     beadGold: makeBead(R, "#fff6dc", "#e6c68a", "#94733f"),
     glow: makeGlow("rgba(255,244,214,1)", "rgba(232,196,128,0.5)"),
-    glowCoral: makeGlow("rgba(255,214,196,0.9)", "rgba(224,138,109,0.35)"),
   };
   glassPattern = ctx.createPattern(makeGlassTexture(), "repeat");
 }
@@ -650,6 +748,17 @@ function readSafe() {
   safe.b = parseFloat(cs.paddingBottom) || 0; safe.l = parseFloat(cs.paddingLeft) || 0;
   p.remove();
 }
+let slotW = [];
+function layoutSlots() {
+  FIT.land = T.w > T.h * 1.05;
+  const bw = FIT.land ? 1 : BW, bh = FIT.land ? BW : 1;
+  FIT.s = Math.min(T.w / bw, T.h / bh);
+  FIT.ox = (T.w - bw * FIT.s) / 2; FIT.oy = (T.h - bh * FIT.s) / 2;
+  slotW = state.graph ? state.graph.sol.map((p) => {
+    const x = FIT.land ? p.y : p.x, y = FIT.land ? BW - p.x : p.y;
+    return { x: FIT.ox + x * FIT.s, y: FIT.oy + y * FIT.s };
+  }) : [];
+}
 function resize() {
   readSafe();
   W = window.innerWidth; H = window.innerHeight; DPR = Math.min(window.devicePixelRatio || 1, 3);
@@ -658,13 +767,14 @@ function resize() {
   R = big ? 13 : 11; LW = big ? 2.4 : 2;
   const side = 18 + R;
   T.x = safe.l + side; T.w = Math.max(100, W - safe.l - safe.r - side * 2);
-  T.y = safe.t + 86 + R; T.h = Math.max(100, H - T.y - safe.b - 58 - R);
+  T.y = safe.t + 92 + R; T.h = Math.max(100, H - T.y - safe.b - 58 - R);
   buildSprites();
-  if (state.phase === "won") frameSolved(false); else resetCam(false);
+  layoutSlots();
+  if (state.phase === "won" || state.phase === "lost") frameSolved(false); else resetCam(false);
   if (state.nodes.length) recompute(false);
   wake();
 }
-const toScreen = (u, v) => ({ x: cam.ox + u * T.w * cam.s, y: cam.oy + v * T.h * cam.s });
+const toScreen = (x, y) => ({ x: cam.ox + x * cam.s, y: cam.oy + y * cam.s });
 const toWorld = (x, y) => ({ x: (x - cam.ox) / cam.s, y: (y - cam.oy) / cam.s });
 function clampCam() {
   if (cam.s <= 1) { cam.s = 1; cam.ox = T.x; cam.oy = T.y; return; }
@@ -683,93 +793,67 @@ function resetCam(anim) { camTo(1, T.x, T.y, anim ? 520 : 0); }
    Spielzustand
    ===================================================================== */
 const state = {
-  level: 1, graph: null, nodes: [], edges: [], adj: [],
+  level: 1, graph: null, nodes: [], edges: [], adj: [], slot: [],
   conf: { count: 0, crossed: new Uint8Array(0) }, startCount: 1,
-  phase: "play", moves: 0, elapsed: 0, lastTick: now(),
-  undo: [], flashes: [], particles: [], rings: [], hint: null,
-  win: null, intro: 0, outro: null, preview: 0, lastNode: 0,
+  phase: "play", moves: 0, attempts: 1, elapsed: 0, lastTick: now(),
+  flashes: [], particles: [], rings: [], hint: null, hinted: new Set(),
+  win: null, lost: null, intro: 0, outro: null, lastNode: 0,
+  swapping: false, selected: -1,
 };
 let springs = [];
+let drag = null; // { pid, i, x, y, x0, y0, dx, dy, moved, target }
 
-function worldPts() { return state.nodes.map((n) => ({ x: n.u * T.w, y: n.v * T.h })); }
+const slotPts = () => state.slot.map((s) => slotW[s]);
 function recompute(fx) {
   const prev = state.conf;
-  const r = conflicts(worldPts(), state.edges, false);
+  const r = conflicts(slotPts(), state.edges, false);
   if (fx && prev.crossed.length === r.crossed.length) {
     const t = now();
     for (let e = 0; e < r.crossed.length; e++) if (prev.crossed[e] && !r.crossed[e]) state.flashes.push({ e, t0: t });
-    if (r.count < prev.count) { Sound.progress(1 - r.count / Math.max(1, state.startCount)); bumpPill(); }
+    if (r.count < prev.count) { Sound.progress(1 - r.count / Math.max(1, state.startCount)); bumpPill(); haptic(8); }
     else if (r.count > prev.count) Sound.worse();
   }
   state.conf = r;
   updateHud();
 }
 
-function scramble(g) {
-  const n = g.n, rng = Math.random, best = { pos: null, c: -1 };
-  const minC = Math.max(2, Math.round(g.edges.length * 0.45));
-  const rad = 0.42 * Math.min(T.w, T.h);
-  const circleOk = (TAU * rad) / n > R * 3.3;
-  for (let a = 0; a < 40; a++) {
-    let pos;
-    if (circleOk && (a % 2 === 0)) {
-      const order = shuffle([...Array(n).keys()], rng), off = rng() * TAU;
-      pos = new Array(n);
-      order.forEach((i, k) => {
-        const ang = off + (k / n) * TAU;
-        pos[i] = { u: 0.5 + (Math.cos(ang) * rad) / T.w, v: 0.5 + (Math.sin(ang) * rad) / T.h };
-      });
-    } else {
-      pos = []; let minD = Math.max(R * 3, 0.7 * Math.sqrt((T.w * T.h) / n)), tries = 0;
-      while (pos.length < n) {
-        const p = { u: 0.04 + rng() * 0.92, v: 0.04 + rng() * 0.92 };
-        if (pos.every((q) => ((q.u - p.u) * T.w) ** 2 + ((q.v - p.v) * T.h) ** 2 > minD * minD)) pos.push(p);
-        if (++tries > 2000) { minD *= 0.9; tries = 0; }
-      }
-    }
-    const c = conflicts(pos.map((p) => ({ x: p.u * T.w, y: p.v * T.h })), g.edges, false).count;
-    if (c > best.c) { best.c = c; best.pos = pos; }
-    if (c >= minC) break;
-  }
-  return best.pos;
-}
-
 function loadLevel(level, opts = {}) {
   state.level = level;
-  const g = (state.graph = genGraph(level));
+  const g = (state.graph = genLevel(level));
   state.edges = g.edges;
   state.adj = Array.from({ length: g.n }, () => []);
   g.edges.forEach(([a, b], e) => { state.adj[a].push(e); state.adj[b].push(e); });
-  let pos = null;
+  layoutSlots();
   const cur = save.cur;
-  if (!opts.fresh && cur && cur.level === level && Array.isArray(cur.p) && cur.p.length === g.n * 2) {
-    pos = []; for (let i = 0; i < g.n; i++) pos.push({ u: cur.p[2 * i], v: cur.p[2 * i + 1] });
-    state.moves = cur.m || 0; state.elapsed = cur.t || 0; state.startCount = cur.s || 1;
+  if (!opts.fresh && cur && cur.level === level && Array.isArray(cur.slot) && cur.slot.length === g.n && (cur.m || 0) < g.limit) {
+    state.slot = cur.slot.slice(); state.moves = cur.m || 0; state.elapsed = cur.t || 0;
+    state.attempts = cur.a || 1; state.hinted = new Set(cur.h || []);
   } else {
-    pos = scramble(g);
-    state.moves = 0; state.elapsed = 0; state.startCount = 0;
+    state.slot = g.start.slice(); state.moves = 0; state.elapsed = 0;
+    state.attempts = opts.retry && cur && cur.level === level ? (cur.a || 1) + 1 : 1;
+    state.hinted = new Set();
   }
-  const t = now();
-  state.nodes = pos.map((p, i) => ({
-    u: clamp(p.u, 0, 1), v: clamp(p.v, 0, 1), held: false, grabT: 0, sx: 0, sy: 0, scale: 1,
-    tw: { fu: 0.5, fv: 0.5, t0: t + 80 + i * Math.min(26, 520 / g.n), dur: 720, ease: eBack, intro: true },
+  const t = now(), c = { x: T.w / 2, y: T.h / 2 };
+  state.nodes = range(g.n).map((i) => ({
+    held: false, sx: 0, sy: 0, wx: c.x, wy: c.y, scale: 1, alpha: 0,
+    tw: { fx: c.x, fy: c.y, t0: t + 80 + i * Math.min(26, 520 / g.n), dur: 720, ease: eBack, intro: true },
   }));
   springs = g.edges.map(() => ({ ox: 0, oy: 0, vx: 0, vy: 0, mx: NaN, my: NaN }));
-  state.phase = "play"; state.win = null; state.undo = []; state.flashes = []; state.rings = []; state.hint = null; state.outro = null;
+  state.phase = "play"; state.win = null; state.lost = null; state.flashes = []; state.rings = []; state.hint = null;
+  state.outro = null; state.swapping = false; state.selected = -1; drag = null;
   state.conf = { count: 0, crossed: new Uint8Array(g.edges.length) };
   state.intro = t;
+  state.startCount = Math.max(1, conflicts(g.start.map((s) => slotW[s]), g.edges, false).count);
   recompute(false);
-  if (!state.startCount) state.startCount = Math.max(1, state.conf.count);
   state.lastTick = now();
-  save.cur = { level, p: packPos(state.nodes), m: state.moves, t: state.elapsed, s: state.startCount };
-  persist(true);
+  saveCur();
   resetCam(false);
   setChapterBg(level, opts.instantBg);
   $("#tChap").textContent = chapterName(level);
   $("#tLevel").textContent = "Level " + level;
-  $("#hud").style.opacity = 1;
   $("#card").classList.remove("show");
-  updateUndo();
+  buildDots();
+  updateHud();
   showTipFor(level);
   wake();
 }
@@ -786,29 +870,51 @@ function setChapterBg(level, instant) {
 }
 
 /* ---------- Anzeige ---------- */
-let pillTimer = 0;
-function updateHud() {
+function buildDots() {
+  const g = state.graph, box = $("#dots"); box.innerHTML = "";
+  for (let k = 0; k < g.limit; k++) { const i = document.createElement("i"); if (k >= g.par) i.className = "extra"; box.appendChild(i); }
+}
+function updateDots(pop) {
+  const g = state.graph, dots = $("#dots").children, left = g.limit - state.moves;
+  for (let k = 0; k < dots.length; k++) {
+    const d = dots[k];
+    const used = k < state.moves;
+    if (used && pop && !d.classList.contains("used")) { d.classList.remove("pop"); void d.offsetWidth; d.classList.add("pop"); }
+    d.classList.toggle("used", used);
+    d.classList.toggle("last", state.phase === "play" && left === 1 && k === state.moves);
+  }
+}
+let pillTimer = 0, pillMsg = null;
+function updateHud(pop) {
+  updateDots(pop);
   const c = state.conf.count, pill = $("#pill");
-  const held = state.nodes.some((n) => n.held);
-  const prog = state.phase === "won" ? 1 : 1 - c / Math.max(1, state.startCount);
-  $("#tProg").style.width = (clamp(prog, 0, 1) * 100).toFixed(1) + "%";
+  $("#bHint").disabled = state.phase !== "play" || state.graph.limit - state.moves < 2;
+  $("#bRestart").disabled = state.phase === "won";
   if (state.phase !== "play") { pill.classList.add("hide"); return; }
   pill.classList.remove("hide");
-  pill.classList.toggle("zero", c === 0);
-  pill.textContent = c === 0 ? (held ? "Frei – jetzt loslassen" : "Frei") : c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
+  if (pillMsg) { pill.textContent = pillMsg; pill.className = "info"; return; }
+  const left = state.graph.limit - state.moves;
+  pill.className = left === 1 ? "warn" : "";
+  const cr = c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
+  pill.textContent = left === 1 ? cr + " · letzter Zug" : cr;
+}
+function flashPill(msg, ms) {
+  pillMsg = msg; updateHud();
+  clearTimeout(flashPill.t); flashPill.t = setTimeout(() => { pillMsg = null; updateHud(); }, ms || 1800);
 }
 function bumpPill() {
   const p = $("#pill"); p.classList.add("bump"); clearTimeout(pillTimer);
   pillTimer = setTimeout(() => p.classList.remove("bump"), 160);
 }
-function updateUndo() { $("#bUndo").disabled = !state.undo.length || state.phase !== "play"; }
 
 const TIPS = {
-  1: "Ziehe die Perlen, bis sich keine Fäden mehr kreuzen.",
-  2: "Kupferrot leuchten die Fäden, die sich noch kreuzen.",
-  4: "Du kannst mit mehreren Fingern gleichzeitig ziehen.",
-  6: "Die Glühbirne zeigt dir die verworrenste Perle.",
+  1: "Ziehe eine Perle auf eine andere – die beiden tauschen ihre Plätze.",
+  2: "Jeder Tausch kostet einen Zug. Die goldenen Punkte oben sind das Ideal.",
+  3: "Du kannst auch erst eine Perle antippen und dann die andere.",
+  6: "Die Glühbirne zeigt eine falsch liegende Perle – sie kostet einen Zug.",
+  8: "Ab jetzt sind manchmal drei Perlen im Kreis vertauscht.",
   14: "Mit zwei Fingern auf freier Fläche zoomen, doppelt tippen zum Zurücksetzen.",
+  25: "Jetzt können auch vier Perlen im Kreis vertauscht sein.",
 };
 let tipTimer = 0;
 function showTipFor(level) {
@@ -821,44 +927,53 @@ function showTipFor(level) {
 function tipDone() {
   if (!TIPS[state.level] || save.tips[state.level]) return;
   save.tips[state.level] = 1; persist(true);
-  clearTimeout(tipTimer); tipTimer = setTimeout(() => $("#tip").classList.remove("show"), 2200);
+  clearTimeout(tipTimer); tipTimer = setTimeout(() => $("#tip").classList.remove("show"), 1800);
+}
+function saveCur() {
+  if (state.phase !== "play") return;
+  save.cur = { level: state.level, slot: state.slot.slice(), m: state.moves, t: Math.round(state.elapsed), a: state.attempts, h: [...state.hinted] };
+  persist(true);
 }
 
 /* =====================================================================
-   Eingabe – Ziehen mit beliebig vielen Fingern, Zoomen auf freier Fläche
+   Eingabe
+   Perle auf Perle ziehen = tauschen. Antippen + Antippen = tauschen.
+   Während des Ziehens wird nichts neu bewertet – erst denken, dann tauschen.
    ===================================================================== */
-const pointers = new Map();
-let gestureSnap = null, lastTap = null;
+const camPointers = new Map();
+let lastTap = null;
+const HIT = () => Math.max(28, R + 17);
 
-function hitNode(x, y, rad) {
+function hitNode(x, y, rad, except) {
   let best = -1, bd = rad * rad;
   state.nodes.forEach((n, i) => {
-    if (n.held) return;
+    if (i === except) return;
     const d = (n.sx - x) ** 2 + (n.sy - y) ** 2;
     if (d < bd) { bd = d; best = i; }
   });
   return best;
 }
 function finishIntro() { for (const n of state.nodes) if (n.tw && n.tw.intro) n.tw = null; }
+const canAct = () => state.phase === "play" && !state.outro && !state.swapping;
 
 canvas.addEventListener("pointerdown", (e) => {
   Sound.init();
-  if (state.phase !== "play" || state.outro) return;
-  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
   const x = e.clientX, y = e.clientY;
-  const i = hitNode(x, y, e.pointerType === "mouse" ? R + 8 : Math.max(30, R + 18));
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  const i = canAct() && !drag ? hitNode(x, y, e.pointerType === "mouse" ? R + 8 : HIT()) : -1;
   if (i >= 0) {
     finishIntro();
+    if (state.selected >= 0 && state.selected !== i) {           // zweites Antippen: tauschen
+      const a = state.selected; state.selected = -1; state.nodes[a].held = false;
+      doSwap(a, i, null);
+      return;
+    }
     const n = state.nodes[i];
-    if (!gestureSnap) gestureSnap = new Map();
-    if (!gestureSnap.has(i)) gestureSnap.set(i, { u: n.u, v: n.v });
-    n.tw = null; n.held = true; n.grabT = now();
-    pointers.set(e.pointerId, { kind: "node", i, dx: n.sx - x, dy: n.sy - y });
-    state.hint = null;
+    drag = { pid: e.pointerId, i, x, y, x0: x, y0: y, dx: n.sx - x, dy: n.sy - y, moved: false, target: -1 };
+    n.held = true;
     Sound.pick(); haptic(6);
-    updateHud();
   } else {
-    pointers.set(e.pointerId, { kind: "cam", x, y });
+    camPointers.set(e.pointerId, { x, y, x0: x, y0: y });
     const t = now();
     if (lastTap && t - lastTap.t < 320 && Math.hypot(x - lastTap.x, y - lastTap.y) < 40) { resetCam(true); lastTap = null; }
     else lastTap = { t, x, y };
@@ -866,36 +981,61 @@ canvas.addEventListener("pointerdown", (e) => {
   wake();
 });
 canvas.addEventListener("pointermove", (e) => {
-  const p = pointers.get(e.pointerId); if (!p) return;
   const x = e.clientX, y = e.clientY;
-  if (p.kind === "node") {
-    const w = toWorld(x + p.dx, y + p.dy), n = state.nodes[p.i];
-    n.u = clamp(w.x / T.w, 0, 1); n.v = clamp(w.y / T.h, 0, 1);
-    recompute(true);
-  } else {
-    const cams = [...pointers.values()].filter((q) => q.kind === "cam");
-    if (cams.length === 1) {
-      if (cam.s > 1.001) { cam.ox += x - p.x; cam.oy += y - p.y; clampCam(); }
-    } else if (cams.length >= 2) {
-      const o = cams[0] === p ? cams[1] : cams[0];
-      const d0 = Math.hypot(p.x - o.x, p.y - o.y), d1 = Math.hypot(x - o.x, y - o.y);
-      const c0x = (p.x + o.x) / 2, c0y = (p.y + o.y) / 2, c1x = (x + o.x) / 2, c1y = (y + o.y) / 2;
-      const ns = clamp(cam.s * (d1 / Math.max(d0, 1)), 1, 4), f = ns / cam.s;
-      cam.ox = c1x - (c0x - cam.ox) * f; cam.oy = c1y - (c0y - cam.oy) * f; cam.s = ns;
-      cam.tw = null; clampCam();
+  if (drag && drag.pid === e.pointerId) {
+    drag.x = x; drag.y = y;
+    if (!drag.moved && Math.hypot(x - drag.x0, y - drag.y0) > 9) {
+      drag.moved = true;
+      if (state.selected === drag.i) state.selected = -1;
     }
-    p.x = x; p.y = y;
+    if (drag.moved) {
+      const prev = drag.target;
+      drag.target = hitNode(x, y, HIT() + 6, drag.i);
+      if (drag.target !== prev && drag.target >= 0) { Sound.tone(523.25, { dur: 0.25, vol: 0.025, bright: 1500, rev: 0.2 }); haptic(4); }
+    }
+    wake(); return;
   }
+  const p = camPointers.get(e.pointerId); if (!p) return;
+  const cams = [...camPointers.values()];
+  if (cams.length === 1) {
+    if (cam.s > 1.001) { cam.ox += x - p.x; cam.oy += y - p.y; cam.tw = null; clampCam(); }
+  } else if (cams.length >= 2) {
+    const o = cams[0] === p ? cams[1] : cams[0];
+    const d0 = Math.hypot(p.x - o.x, p.y - o.y), d1 = Math.hypot(x - o.x, y - o.y);
+    const c0x = (p.x + o.x) / 2, c0y = (p.y + o.y) / 2, c1x = (x + o.x) / 2, c1y = (y + o.y) / 2;
+    const ns = clamp(cam.s * (d1 / Math.max(d0, 1)), 1, 4), f = ns / cam.s;
+    cam.ox = c1x - (c0x - cam.ox) * f; cam.oy = c1y - (c0y - cam.oy) * f; cam.s = ns;
+    cam.tw = null; clampCam();
+  }
+  p.x = x; p.y = y;
   wake();
 });
 function endPointer(e) {
-  const p = pointers.get(e.pointerId); if (!p) return;
-  pointers.delete(e.pointerId);
-  if (p.kind === "node") {
-    const n = state.nodes[p.i]; n.held = false; n.dropT = now(); state.lastNode = p.i;
-    Sound.drop();
-    if (![...pointers.values()].some((q) => q.kind === "node")) endGesture();
-    else updateHud();
+  if (drag && drag.pid === e.pointerId) {
+    const d = drag; drag = null;
+    const n = state.nodes[d.i];
+    if (!d.moved) {                                     // Antippen: auswählen / abwählen
+      if (state.selected === d.i) { state.selected = -1; n.held = false; Sound.drop(); }
+      else { state.selected = d.i; }
+    } else if (d.target >= 0 && e.type !== "pointercancel") {
+      n.held = false;
+      const from = toWorld(d.x + d.dx, d.y + d.dy);
+      doSwap(d.i, d.target, from);
+    } else {                                            // ins Leere: zurück an den Platz
+      n.held = false;
+      const from = toWorld(d.x + d.dx, d.y + d.dy);
+      n.tw = { fx: from.x, fy: from.y, t0: now(), dur: 380, ease: eBack };
+      Sound.drop();
+    }
+    wake(); return;
+  }
+  const p = camPointers.get(e.pointerId);
+  if (p) {
+    camPointers.delete(e.pointerId);
+    // Tippen ins Leere hebt eine Auswahl auf
+    if (state.selected >= 0 && Math.hypot(p.x - p.x0, p.y - p.y0) < 9 && !camPointers.size) {
+      state.nodes[state.selected].held = false; state.selected = -1; Sound.drop();
+    }
   }
   wake();
 }
@@ -911,66 +1051,69 @@ canvas.addEventListener("wheel", (e) => {
 document.addEventListener("gesturestart", (e) => e.preventDefault());
 document.addEventListener("dblclick", (e) => e.preventDefault());
 
-function endGesture() {
-  const snap = gestureSnap; gestureSnap = null;
-  if (!snap) return;
-  const moved = [];
-  for (const [i, s] of snap) {
-    const n = state.nodes[i];
-    if (Math.hypot((n.u - s.u) * T.w, (n.v - s.v) * T.h) > 1.5) moved.push({ i, u: s.u, v: s.v });
-  }
-  if (moved.length) {
-    state.undo.push(moved); if (state.undo.length > 200) state.undo.shift();
-    state.moves += moved.length;
+const SWAP_MS = 380;
+function doSwap(a, b, fromA) {
+  if (!canAct()) return;
+  const na = state.nodes[a], nb = state.nodes[b];
+  const pa = fromA || { x: na.wx, y: na.wy }, pb = { x: nb.wx, y: nb.wy };
+  [state.slot[a], state.slot[b]] = [state.slot[b], state.slot[a]];
+  const t = now();
+  na.held = false; nb.held = false;
+  na.tw = { fx: pa.x, fy: pa.y, t0: t, dur: SWAP_MS, ease: eInOut, curve: 1 };
+  nb.tw = { fx: pb.x, fy: pb.y, t0: t, dur: SWAP_MS, ease: eInOut, curve: 1 };
+  state.hinted.delete(a); state.hinted.delete(b);
+  state.moves++; state.lastNode = b;
+  state.swapping = true;
+  Sound.swap(); haptic(10);
+  updateHud(true);
+  tipDone();
+  setTimeout(() => {
+    state.swapping = false;
+    recompute(true);
     saveCur();
-    if (state.conf.count < state.startCount) tipDone();
-  }
-  updateUndo(); updateHud();
-  if (state.conf.count === 0) solve(state.lastNode);
-}
-function saveCur() {
-  save.cur = { level: state.level, p: packPos(state.nodes), m: state.moves, t: Math.round(state.elapsed), s: state.startCount };
-  persist(true);
-}
-function undo() {
-  if (state.phase !== "play" || !state.undo.length || pointers.size) return;
-  const step = state.undo.pop(), t = now();
-  for (const { i, u, v } of step) {
-    const n = state.nodes[i];
-    n.tw = { fu: n.u, fv: n.v, t0: t, dur: 300, ease: eOut };
-    n.u = u; n.v = v;
-  }
-  state.moves += 1;
-  recompute(true); saveCur(); updateUndo();
-  Sound.tone(392, { dur: 0.5, vol: 0.05, bright: 1500 }); haptic(5);
-  if (state.conf.count === 0) setTimeout(() => state.phase === "play" && state.conf.count === 0 && solve(step[0].i), 320);
+    if (state.conf.count === 0) solve(state.lastNode);
+    else if (state.moves >= state.graph.limit) lose();
+    else if (state.graph.limit - state.moves === 1) Sound.warn();
+    wake();
+  }, SWAP_MS);
   wake();
 }
+function restart() {
+  if (state.phase === "won" || state.outro) return;
+  state.selected = -1;
+  nextLevel(state.level, true);
+}
 function hint() {
-  if (state.phase !== "play") return;
+  if (!canAct() || state.graph.limit - state.moves < 2) return;
   Sound.init();
-  const r = conflicts(worldPts(), state.edges, true);
+  const r = conflicts(slotPts(), state.edges, true);
   if (!r.count) return;
-  let bi = 0; r.score.forEach((s, i) => { if (s > r.score[bi]) bi = i; });
+  const wrong = range(state.graph.n).filter((i) => state.slot[i] !== i && !state.hinted.has(i));
+  const pool = wrong.length ? wrong : range(state.graph.n);
+  let bi = pool[0]; for (const i of pool) if (r.score[i] > r.score[bi]) bi = i;
   state.hint = { i: bi, t0: now() };
+  state.hinted.add(bi);
+  state.moves++;
+  saveCur();
+  updateHud(true);
+  flashPill("Tipp · ein Zug verbraucht");
   Sound.tone(659.25, { dur: 1.2, vol: 0.06, bright: 2600, bell: true });
   const b = $("#bHint"); b.classList.remove("hint-on"); void b.offsetWidth; b.classList.add("hint-on");
   wake();
 }
 
 /* =====================================================================
-   Gelöst!
+   Gelöst!  /  Verheddert
    ===================================================================== */
 const TITLES = ["Entwirrt", "Gelöst", "Klar wie Glas", "Fein gelöst", "Gelungen", "Wunderbar", "Frei"];
 function solve(origin) {
   if (state.phase !== "play") return;
   state.phase = "won";
   finishIntro();
-  const P = worldPts(), n = state.nodes.length;
+  const g = state.graph;
+  const P = slotPts(), n = state.nodes.length;
   const faces = computeFaces(P, state.edges, n);
-  const ch = chapterOf(state.level);
-  const colors = colorFaces(faces, state.level, ch.glass);
-  // Welle: Breitensuche ab der zuletzt bewegten Perle
+  const colors = colorFaces(faces, state.level, chapterOf(state.level).glass);
   const depth = new Array(n).fill(-1); depth[origin] = 0; const q = [origin];
   while (q.length) { const u = q.shift(); for (const e of state.adj[u]) { const [a, b] = state.edges[e]; const v = a === u ? b : a; if (depth[v] < 0) { depth[v] = depth[u] + 1; q.push(v); } } }
   const maxDepth = Math.max(1, ...depth);
@@ -982,35 +1125,76 @@ function solve(origin) {
     faceDelay: faces.map((f) => 350 + (Math.hypot(f.cx - o.x, f.cy - o.y) / maxDist) * (maxDepth * STEP * 0.9 + 300)),
     popped: new Uint8Array(n), ringDone: false,
   };
-  const secs = Math.round(state.elapsed);
+  const secs = Math.round(state.elapsed), stars = starsFor(g, state.moves);
   const prev = save.solved[state.level];
-  save.solved[state.level] = { p: packPos(state.nodes), a: +(T.w / T.h).toFixed(4), t: prev ? Math.min(prev.t, secs) : secs, m: prev ? Math.min(prev.m, state.moves) : state.moves };
+  const better = !prev || stars > prev.st || (stars === prev.st && state.moves < prev.m);
+  save.solved[state.level] = better
+    ? { slot: state.slot.slice(), st: stars, m: state.moves, t: secs }
+    : Object.assign(prev, { t: Math.min(prev.t, secs) });
   save.unlocked = Math.max(save.unlocked, state.level + 1);
   save.cur = null;
   persist();
   Sound.win(maxDepth + 3);
   haptic([12, 60, 18]);
-  updateHud(); updateUndo();
+  state.selected = -1;
+  updateHud();
   $("#tip").classList.remove("show");
-  // Karte vorbereiten
+  // Karte
+  const card = $("#card");
+  card.classList.remove("lost");
   $("#cCap").textContent = `Level ${state.level} · ${chapterName(state.level)}`;
-  $("#cTitle").textContent = state.level === 1 ? "Entwirrt" : TITLES[(state.level * 5) % TITLES.length];
-  $("#cTime").textContent = fmtTime(secs);
+  $("#cTitle").textContent = stars === 3 ? (state.level === 1 ? "Entwirrt" : TITLES[(state.level * 5) % TITLES.length]) : stars === 2 ? "Gelöst" : "Gerade so";
   $("#cMoves").textContent = state.moves;
-  $("#cNodes").textContent = n;
+  $("#cPar").textContent = g.par;
+  $("#cTime").textContent = fmtTime(secs);
   let note = "";
-  if (state.level % 10 === 0) note = `Kapitel ${chapterName(state.level)} vollendet. Als Nächstes: ${chapterName(state.level + 1)}.`;
-  else if (prev && (secs < prev.t)) note = "Schneller als beim letzten Mal.";
+  if (stars === 3) note = state.moves < g.par ? "Sogar besser als das Ideal." : "Mit der idealen Zahl an Zügen.";
+  else note = `Ideal wären ${g.par} ${g.par === 1 ? "Zug" : "Züge"} gewesen.`;
+  if (state.level % 10 === 0) note += ` Kapitel ${chapterName(state.level)} vollendet – als Nächstes: ${chapterName(state.level + 1)}.`;
   $("#cNote").textContent = note;
+  $("#cAlt").textContent = "Nochmal"; $("#cMain").textContent = "Weiter";
+  card.dataset.mode = "won";
+  const starEls = [...$("#cStars").children];
+  starEls.forEach((s) => s.classList.remove("in", "on"));
   setTimeout(() => frameSolved(true), 450);
-  setTimeout(() => { if (state.phase === "won") { $("#card").classList.add("show"); } }, Math.min(2600, 1100 + maxDepth * STEP));
+  const showAt = Math.min(2600, 1100 + maxDepth * STEP);
+  setTimeout(() => {
+    if (state.phase !== "won") return;
+    card.classList.add("show");
+    starEls.forEach((s, k) => setTimeout(() => {
+      s.classList.add("in");
+      if (k < stars) { s.classList.add("on"); Sound.star(k); haptic(6); }
+    }, 450 + k * 260));
+  }, showAt);
+  wake();
+}
+function lose() {
+  if (state.phase !== "play") return;
+  state.phase = "lost";
+  state.lost = { t0: now() };
+  state.selected = -1;
+  save.cur = null; persist();
+  Sound.lose(); haptic([30, 80, 30]);
+  updateHud();
+  $("#tip").classList.remove("show");
+  const card = $("#card");
+  card.classList.add("lost");
+  $("#cCap").textContent = `Level ${state.level} · ${chapterName(state.level)}`;
+  $("#cTitle").textContent = "Verheddert";
+  $("#cMoves").textContent = state.moves;
+  $("#cPar").textContent = state.graph.par;
+  $("#cTime").textContent = fmtTime(state.elapsed);
+  const c = state.conf.count;
+  $("#cNote").textContent = `Alle Züge verbraucht – ${c === 1 ? "eine Kreuzung blieb" : c + " Kreuzungen blieben"}. Schau dir das Muster in Ruhe an und versuch es noch einmal.`;
+  $("#cAlt").textContent = "Level"; $("#cMain").textContent = "Nochmal";
+  card.dataset.mode = "lost";
+  setTimeout(() => { if (state.phase === "lost") { card.classList.add("show"); frameSolved(true); } }, 900);
   wake();
 }
 function frameSolved(anim) {
-  const card = $("#card");
-  const ch = card.offsetHeight || 240;
+  const ch = $("#card").offsetHeight || 260;
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-  for (const n of state.nodes) { const x = n.u * T.w, y = n.v * T.h; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+  for (const p of slotPts()) { minx = Math.min(minx, p.x); maxx = Math.max(maxx, p.x); miny = Math.min(miny, p.y); maxy = Math.max(maxy, p.y); }
   const m = R + 10;
   minx -= m; miny -= m; maxx += m; maxy += m;
   const top = safe.t + 70, bottom = H - safe.b - ch - 30, left = safe.l + 16, right = W - safe.r - 16;
@@ -1019,10 +1203,10 @@ function frameSolved(anim) {
   const ox = (left + right) / 2 - ((minx + maxx) / 2) * s, oy = top + ah / 2 - ((miny + maxy) / 2) * s;
   camTo(s, ox, oy, anim ? 1100 : 0);
 }
-function nextLevel(level) {
+function nextLevel(level, retry) {
   if (state.outro) return;
   $("#card").classList.remove("show");
-  state.outro = { t0: now(), dur: 520, then: () => loadLevel(level, { fresh: true }) };
+  state.outro = { t0: now(), dur: 520, then: () => loadLevel(level, { fresh: true, retry }) };
   Sound.tone(440, { dur: 0.8, vol: 0.04, bright: 1800 });
   wake();
 }
@@ -1041,49 +1225,51 @@ function frame() {
 }
 
 function update(t, dt) {
-  let busy = pointers.size > 0;
-  // Spielzeit
+  let busy = !!drag || camPointers.size > 0 || state.selected >= 0 || state.hinted.size > 0;
   if (state.phase === "play" && !document.hidden) state.elapsed += Math.min(1, (t - state.lastTick) / 1000);
   state.lastTick = t;
-  // Kamera
   if (cam.tw) {
     const k = clamp((t - cam.tw.t0) / cam.tw.dur, 0, 1), e = eInOut(k);
     cam.s = lerp(cam.tw.f.s, cam.tw.t.s, e); cam.ox = lerp(cam.tw.f.ox, cam.tw.t.ox, e); cam.oy = lerp(cam.tw.f.oy, cam.tw.t.oy, e);
     if (k >= 1) cam.tw = null; busy = true;
   }
-  // Perlen-Positionen auf dem Bildschirm
-  for (const n of state.nodes) {
-    let u = n.u, v = n.v, alpha = 1;
-    if (n.tw) {
+  // Perlen-Positionen
+  state.nodes.forEach((n, i) => {
+    const tgt = slotW[state.slot[i]];
+    let x = tgt.x, y = tgt.y, alpha = 1;
+    if (drag && drag.i === i && drag.moved) {
+      const w = toWorld(drag.x + drag.dx, drag.y + drag.dy); x = w.x; y = w.y;
+    } else if (n.tw) {
       const k = clamp((t - n.tw.t0) / n.tw.dur, 0, 1), e = n.tw.ease(k);
-      u = lerp(n.tw.fu, n.u, e); v = lerp(n.tw.fv, n.v, e);
+      x = lerp(n.tw.fx, tgt.x, e); y = lerp(n.tw.fy, tgt.y, e);
+      if (n.tw.curve) {                          // im Bogen aneinander vorbei
+        const s = Math.sin(Math.PI * e) * 0.18 * n.tw.curve;
+        x += -(tgt.y - n.tw.fy) * s; y += (tgt.x - n.tw.fx) * s;
+      }
       if (n.tw.intro) alpha = clamp(k * 4, 0, 1);
       if (k >= 1) n.tw = null; busy = true;
     }
-    const s = toScreen(u, v); n.sx = s.x; n.sy = s.y; n.alpha = alpha; n.wu = u * T.w; n.wv = v * T.h;
-    const target = n.held ? 1.28 : 1;
+    n.wx = x; n.wy = y; n.alpha = alpha;
+    const s = toScreen(x, y); n.sx = s.x; n.sy = s.y;
+    const isTarget = drag && drag.target === i;
+    const target = n.held || state.selected === i ? 1.28 : isTarget ? 1.18 : 1;
     n.scale += (target - n.scale) * Math.min(1, dt * 18);
     if (Math.abs(n.scale - target) > 0.002) busy = true;
-  }
-  // Fäden schwingen ein wenig nach (Feder pro Faden)
+  });
+  // Fäden schwingen nach
   let energy = 0;
   state.edges.forEach(([a, b], e) => {
     const sp = springs[e], A = state.nodes[a], B = state.nodes[b];
-    const mx = (A.wu + B.wu) / 2, my = (A.wv + B.wv) / 2;
+    const mx = (A.wx + B.wx) / 2, my = (A.wy + B.wy) / 2;
     if (!isNaN(sp.mx)) { sp.ox -= (mx - sp.mx) * 0.55; sp.oy -= (my - sp.my) * 0.55; }
     sp.mx = mx; sp.my = my;
-    const len = Math.hypot(A.wu - B.wu, A.wv - B.wv), cap = len * 0.18;
+    const len = Math.hypot(A.wx - B.wx, A.wy - B.wy), cap = len * 0.18;
     const ol = Math.hypot(sp.ox, sp.oy); if (ol > cap && ol > 0) { sp.ox *= cap / ol; sp.oy *= cap / ol; }
     sp.vx += (-sp.ox * 220 - sp.vx * 13) * dt; sp.vy += (-sp.oy * 220 - sp.vy * 13) * dt;
     sp.ox += sp.vx * dt; sp.oy += sp.vy * dt;
     energy += Math.abs(sp.ox) + Math.abs(sp.oy) + Math.abs(sp.vx) * 0.02 + Math.abs(sp.vy) * 0.02;
   });
   if (energy > 0.05 * Math.max(1, state.edges.length * 0.2)) busy = true;
-  // Vorschau-Glanz, wenn beim Ziehen alles frei ist
-  const wantPreview = state.phase === "play" && state.conf.count === 0 && state.nodes.some((n) => n.held) ? 1 : 0;
-  state.preview += (wantPreview - state.preview) * Math.min(1, dt * 8);
-  if (Math.abs(state.preview - wantPreview) > 0.01) busy = true;
-  // Effekte
   state.flashes = state.flashes.filter((f) => t - f.t0 < 700);
   state.rings = state.rings.filter((r) => t - r.t0 < r.dur);
   for (const p of state.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 6 * dt; p.vx *= 1 - dt * 0.6; }
@@ -1091,7 +1277,7 @@ function update(t, dt) {
   if (state.flashes.length || state.rings.length || state.particles.length) busy = true;
   if (state.hint && t - state.hint.t0 > 2600) state.hint = null;
   if (state.hint) busy = true;
-  // Siegesanimation
+  if (state.lost && t - state.lost.t0 < 1500) busy = true;
   if (state.win) {
     const w = state.win, el = t - w.t0;
     if (!w.ringDone) {
@@ -1109,7 +1295,7 @@ function update(t, dt) {
         }
       }
     });
-    busy = true; // Glas schimmert, solange gelöst
+    busy = true;
   }
   if (state.outro) {
     busy = true;
@@ -1118,19 +1304,20 @@ function update(t, dt) {
   return busy;
 }
 
-function edgePath(e) {
+function edgeCtrl(e) {
   const [a, b] = state.edges[e], A = state.nodes[a], B = state.nodes[b], sp = springs[e];
-  const cx = (A.sx + B.sx) / 2 + sp.ox * 2 * cam.s, cy = (A.sy + B.sy) / 2 + sp.oy * 2 * cam.s;
+  return { A, B, cx: (A.sx + B.sx) / 2 + sp.ox * 2 * cam.s, cy: (A.sy + B.sy) / 2 + sp.oy * 2 * cam.s };
+}
+function edgePath(e) {
+  const { A, B, cx, cy } = edgeCtrl(e);
   ctx.moveTo(A.sx, A.sy); ctx.quadraticCurveTo(cx, cy, B.sx, B.sy);
 }
 function edgePoint(e, f) {
-  const [a, b] = state.edges[e], A = state.nodes[a], B = state.nodes[b], sp = springs[e];
-  const cx = (A.sx + B.sx) / 2 + sp.ox * 2 * cam.s, cy = (A.sy + B.sy) / 2 + sp.oy * 2 * cam.s;
-  const g = 1 - f;
+  const { A, B, cx, cy } = edgeCtrl(e), g = 1 - f;
   return { x: g * g * A.sx + 2 * g * f * cx + f * f * B.sx, y: g * g * A.sy + 2 * g * f * cy + f * f * B.sy };
 }
-function glowAt(x, y, size, alpha, spr) {
-  ctx.globalAlpha = alpha; ctx.drawImage(spr || sprites.glow, x - size / 2, y - size / 2, size, size);
+function glowAt(x, y, size, alpha) {
+  ctx.globalAlpha = alpha; ctx.drawImage(sprites.glow, x - size / 2, y - size / 2, size, size);
 }
 
 function draw(t) {
@@ -1145,6 +1332,7 @@ function draw(t) {
   }
   const baseAlpha = ctx.globalAlpha;
   const w = state.win, el = w ? t - w.t0 : 0;
+  const lostK = state.lost ? eOut(clamp((t - state.lost.t0) / 1200, 0, 1)) : 0;
   const introK = clamp((t - state.intro) / 900, 0, 1);
 
   /* --- Glasflächen --- */
@@ -1167,7 +1355,6 @@ function draw(t) {
       ctx.globalAlpha = baseAlpha * k * 0.55; ctx.fillStyle = glassPattern; ctx.fill(path);
       if (k < 1) { ctx.globalAlpha = baseAlpha * (1 - k) * 0.5; ctx.fillStyle = "rgba(255,246,220,1)"; ctx.fill(path); }
     });
-    // Lichtschimmer, der über das Glas wandert
     const sh = ((el - 1500) % 6500) / 1700;
     if (el > 1500 && sh >= 0 && sh <= 1) {
       const span = W + H, x0 = -span * 0.3 + sh * span * 1.3;
@@ -1177,37 +1364,43 @@ function draw(t) {
     }
   }
 
+  /* --- Platzmarke, wohin die Ziel-Perle wandern würde --- */
+  if (drag && drag.moved && drag.target >= 0) {
+    const home = slotW[state.slot[drag.i]], s = toScreen(home.x, home.y);
+    ctx.globalAlpha = baseAlpha * 0.55; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 4]); ctx.lineDashOffset = -t * 0.02;
+    ctx.beginPath(); ctx.arc(s.x, s.y, R * 1.05, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
+
   /* --- Fäden --- */
   const crossed = state.conf.crossed;
-  const heldSet = new Set(); state.nodes.forEach((n, i) => n.held && heldSet.add(i));
+  const movingNode = drag && drag.moved ? drag.i : -1;
+  const focus = new Set();
+  if (drag) focus.add(drag.i);
+  if (state.selected >= 0) focus.add(state.selected);
   const hintEdges = state.hint ? new Set(state.adj[state.hint.i]) : null;
   ctx.lineCap = "round";
-  const passes = [0, 1]; // erst freie, dann gekreuzte Fäden obenauf
-  for (const pass of passes) {
+  for (const pass of [0, 1]) {
     for (let e = 0; e < state.edges.length; e++) {
-      const isX = !w && crossed[e];
-      if ((pass === 1) !== !!isX) continue;
       const [a, b] = state.edges[e], A = state.nodes[a], B = state.nodes[b];
-      const ea = Math.min(A.alpha, B.alpha) * (state.intro ? 0.3 + 0.7 * introK : 1);
-      const active = heldSet.has(a) || heldSet.has(b) || (hintEdges && hintEdges.has(e));
+      const loose = a === movingNode || b === movingNode || state.swapping && (state.nodes[a].tw || state.nodes[b].tw);
+      const isX = !w && !loose && crossed[e];
+      if ((pass === 1) !== !!isX) continue;
+      const ea = Math.min(A.alpha, B.alpha) * (0.3 + 0.7 * introK);
+      const active = focus.has(a) || focus.has(b) || (hintEdges && hintEdges.has(e));
       let col, alpha, lw = LW;
       if (w) {
         const k = eOut(clamp((el - Math.min(w.depth[a], w.depth[b]) * w.STEP) / 380, 0, 1));
-        // dunkle Bleirute unter dem Gold
         ctx.globalAlpha = baseAlpha * ea * (0.35 + 0.5 * k);
         ctx.strokeStyle = "rgba(8,7,6,1)"; ctx.lineWidth = LW + 3.5 * k;
         ctx.beginPath(); edgePath(e); ctx.stroke();
         col = mix(THREAD, GOLD, k); alpha = 0.78 + 0.22 * k; lw = LW + 0.4 * k;
       } else if (isX) {
-        col = mix(CORAL, GOLD_HI, active ? 0.18 : 0); alpha = 0.95; lw = LW + 0.3;
-        ctx.globalAlpha = baseAlpha * ea * 0.14; ctx.strokeStyle = rgba(CORAL, 1); ctx.lineWidth = lw + 6;
+        col = mix(mix(CORAL, GOLD_HI, active ? 0.18 : 0), ASH, lostK * 0.7); alpha = 0.95 - lostK * 0.4; lw = LW + 0.3;
+        ctx.globalAlpha = baseAlpha * ea * 0.14 * (1 - lostK); ctx.strokeStyle = rgba(CORAL, 1); ctx.lineWidth = lw + 6;
         ctx.beginPath(); edgePath(e); ctx.stroke();
       } else {
-        col = mix(THREAD, GOLD, state.preview * 0.85); alpha = active ? 0.95 : 0.66 + 0.3 * state.preview;
-        if (state.preview > 0.02) {
-          ctx.globalAlpha = baseAlpha * ea * 0.12 * state.preview; ctx.strokeStyle = rgba(GOLD, 1); ctx.lineWidth = lw + 7;
-          ctx.beginPath(); edgePath(e); ctx.stroke();
-        }
+        col = mix(THREAD, ASH, lostK * 0.6); alpha = (active ? 0.95 : 0.66) - lostK * 0.3;
       }
       if (active && !w) lw += 0.7;
       ctx.globalAlpha = baseAlpha * ea * alpha; ctx.strokeStyle = rgba(col, 1); ctx.lineWidth = lw;
@@ -1215,7 +1408,7 @@ function draw(t) {
     }
   }
 
-  /* --- Effekte auf den Fäden --- */
+  /* --- Lichteffekte auf den Fäden --- */
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   for (const f of state.flashes) {
     const k = clamp((t - f.t0) / 650, 0, 1);
@@ -1236,20 +1429,31 @@ function draw(t) {
   }
   ctx.restore();
 
-  /* --- Perlen --- */
-  const hi = state.hint;
-  state.nodes.forEach((n, i) => {
-    if (n.alpha <= 0) return;
+  /* --- Perlen (die bewegte zuletzt, damit sie obenauf liegt) --- */
+  const order = range(state.nodes.length).sort((a, b) => state.nodes[a].scale - state.nodes[b].scale);
+  for (const i of order) {
+    const n = state.nodes[i];
+    if (n.alpha <= 0) continue;
     let s = n.scale, gold = 0;
     if (w) {
       const k = (el - w.depth[i] * w.STEP) / 600;
       if (k > 0) { gold = 1; if (k < 1) s *= 1 + 0.55 * Math.sin(Math.PI * Math.min(1, k * 1.6)) * (1 - k); }
     }
-    const a = baseAlpha * n.alpha;
-    if (n.held) {
-      ctx.globalAlpha = a * 0.5; ctx.strokeStyle = rgba(state.preview > 0.5 ? GOLD : THREAD, 1); ctx.lineWidth = 1;
+    const a = baseAlpha * n.alpha * (1 - lostK * 0.35);
+    if (n.held || state.selected === i) {
+      ctx.globalAlpha = a * 0.55; ctx.strokeStyle = rgba(THREAD, 1); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(n.sx, n.sy, R * 2.1, 0, TAU); ctx.stroke();
       glowAt(n.sx, n.sy, R * 6, a * 0.22);
+    }
+    if (drag && drag.target === i) {
+      ctx.globalAlpha = a * 0.9; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(n.sx, n.sy, R * 1.75, 0, TAU); ctx.stroke();
+      glowAt(n.sx, n.sy, R * 5, a * 0.3);
+    }
+    if (state.hinted.has(i) && !w) {
+      const pulse = 0.5 + 0.5 * Math.sin(t * 0.004);
+      ctx.globalAlpha = a * (0.35 + 0.35 * pulse); ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.arc(n.sx, n.sy, R * 1.55, 0, TAU); ctx.stroke();
     }
     if (w && gold) {
       const k = (el - w.depth[i] * w.STEP) / 900;
@@ -1259,10 +1463,9 @@ function draw(t) {
     const size = spr.size * s;
     ctx.globalAlpha = a;
     ctx.drawImage(spr.cv, n.sx - size / 2, n.sy - size / 2, size, size);
-  });
-  // Tipp-Ringe
-  if (hi) {
-    const n = state.nodes[hi.i], el2 = t - hi.t0;
+  }
+  if (state.hint) {
+    const n = state.nodes[state.hint.i], el2 = t - state.hint.t0;
     for (let k = 0; k < 3; k++) {
       const p = (el2 - k * 380) / 1300; if (p <= 0 || p >= 1) continue;
       ctx.globalAlpha = baseAlpha * (1 - p) * 0.8; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.5;
@@ -1290,13 +1493,11 @@ function draw(t) {
    Galerie / Levelauswahl
    ===================================================================== */
 function renderThumb(cv, level) {
-  const g = genGraph(level), s = save.solved[level];
+  const g = genLevel(level), s = save.solved[level];
   const px = 128; cv.width = cv.height = px;
   const c = cv.getContext("2d");
-  const a = s.a || 1, pad = 12;
-  const bw = a >= 1 ? px - pad * 2 : (px - pad * 2) * a, bh = a >= 1 ? (px - pad * 2) / a : px - pad * 2;
-  const ox = (px - bw) / 2, oy = (px - bh) / 2;
-  const P = []; for (let i = 0; i < g.n; i++) P.push({ x: ox + s.p[2 * i] * bw, y: oy + s.p[2 * i + 1] * bh });
+  const pad = 12, sc = (px - pad * 2), ox = (px - BW * sc) / 2, oy = pad;
+  const P = range(g.n).map((i) => { const q = g.sol[s.slot[i]]; return { x: ox + q.x * sc, y: oy + q.y * sc }; });
   const faces = computeFaces(P, g.edges, g.n);
   const cols = colorFaces(faces, level, chapterOf(level).glass);
   c.fillStyle = chapterOf(level).bg[1]; c.fillRect(0, 0, px, px);
@@ -1318,19 +1519,22 @@ function openMenu() {
   const maxLvl = Math.max(save.unlocked, state.level);
   const chapters = chapterIdx(maxLvl) + 1;
   const pending = [];
+  let totalStars = 0;
+  for (const k in save.solved) totalStars += save.solved[k].st || 0;
+  $("#mTotal").textContent = totalStars ? `${totalStars} ◆` : "";
   for (let c = 0; c < chapters; c++) {
     const first = c * 10 + 1;
-    const solvedHere = Array.from({ length: 10 }, (_, k) => save.solved[first + k]).filter(Boolean).length;
+    const stars = Array.from({ length: 10 }, (_, k) => save.solved[first + k]?.st || 0).reduce((a, b) => a + b, 0);
     const sec = document.createElement("section"); sec.className = "chap";
-    sec.innerHTML = `<h3><b>${chapterName(first)}</b><span>${first}–${first + 9}</span><em>${solvedHere}/10</em></h3><div class="grid"></div>`;
+    sec.innerHTML = `<h3><b>${chapterName(first)}</b><span>${first}–${first + 9}</span><em>${stars}/30 ◆</em></h3><div class="grid"></div>`;
     const grid = sec.querySelector(".grid");
     for (let k = 0; k < 10; k++) {
       const lvl = first + k, b = document.createElement("button");
-      const solved = !!save.solved[lvl], open = lvl <= save.unlocked;
-      b.className = "tile" + (solved ? " solved" : "") + (lvl === state.level ? " cur" : "") + (!open ? " locked" : "");
-      b.innerHTML = `<span class="n">${lvl}</span>`;
-      if (solved) { const cv = document.createElement("canvas"); b.prepend(cv); pending.push([cv, lvl]); }
-      if (open) b.addEventListener("click", () => { closeMenu(); if (lvl !== state.level || state.phase === "won") nextLevel(lvl); });
+      const sv = save.solved[lvl], open = lvl <= save.unlocked;
+      b.className = "tile" + (sv ? " solved" : "") + (lvl === state.level ? " cur" : "") + (!open ? " locked" : "");
+      b.innerHTML = `<span class="n">${lvl}</span>` + (sv ? `<span class="st">${[0, 1, 2].map((j) => `<i class="${j < sv.st ? "on" : ""}"></i>`).join("")}</span>` : "");
+      if (sv) { const cv = document.createElement("canvas"); b.prepend(cv); pending.push([cv, lvl]); }
+      if (open) b.addEventListener("click", () => { closeMenu(); if (lvl !== state.level || state.phase !== "play") nextLevel(lvl); });
       grid.appendChild(b);
     }
     box.prepend(sec);
@@ -1339,9 +1543,8 @@ function openMenu() {
   $("#oVib").classList.toggle("on", !!save.vib);
   $("#menu").classList.add("open");
   $("#menu").scrollTop = 0;
-  // Vorschaubilder nach und nach zeichnen, damit das Menü sofort aufgeht
   let i = 0;
-  const step = () => { const end = Math.min(pending.length, i + 6); for (; i < end; i++) renderThumb(pending[i][0], pending[i][1]); if (i < pending.length) requestAnimationFrame(step); };
+  const step = () => { const end = Math.min(pending.length, i + 4); for (; i < end; i++) renderThumb(pending[i][0], pending[i][1]); if (i < pending.length) requestAnimationFrame(step); };
   requestAnimationFrame(step);
 }
 function closeMenu() { $("#menu").classList.remove("open"); }
@@ -1350,33 +1553,37 @@ function closeMenu() { $("#menu").classList.remove("open"); }
 $("#bMenu").addEventListener("click", openMenu);
 $("#mClose").addEventListener("click", closeMenu);
 $("#menu").addEventListener("click", (e) => { if (e.target.id === "menu") closeMenu(); });
-$("#bUndo").addEventListener("click", undo);
+$("#bRestart").addEventListener("click", restart);
 $("#bHint").addEventListener("click", hint);
-$("#cNext").addEventListener("click", () => nextLevel(state.level + 1));
-$("#cAgain").addEventListener("click", () => nextLevel(state.level));
+$("#cMain").addEventListener("click", () => {
+  if ($("#card").dataset.mode === "lost") nextLevel(state.level, true); else nextLevel(state.level + 1);
+});
+$("#cAlt").addEventListener("click", () => {
+  if ($("#card").dataset.mode === "lost") openMenu(); else nextLevel(state.level, true);
+});
 $("#oSound").addEventListener("click", (e) => { save.sound = !save.sound; e.currentTarget.classList.toggle("on", save.sound); persist(); if (save.sound) { Sound.init(); Sound.tone(587.33, { dur: 1, vol: 0.08, bell: true }); } });
 $("#oVib").addEventListener("click", (e) => { save.vib = !save.vib; e.currentTarget.classList.toggle("on", save.vib); persist(); haptic(10); });
-$("#oShuffle").addEventListener("click", () => { closeMenu(); nextLevel(state.level); });
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "z" && (e.metaKey || e.ctrlKey)) || e.key === "Backspace") { e.preventDefault(); undo(); }
+  if (e.key === "r") restart();
   else if (e.key === "h") hint();
-  else if (e.key === "Escape") closeMenu();
+  else if (e.key === "Escape") { closeMenu(); if (state.selected >= 0) { state.nodes[state.selected].held = false; state.selected = -1; wake(); } }
   else if (e.key === "Enter" && state.phase === "won") nextLevel(state.level + 1);
+  else if (e.key === "Enter" && state.phase === "lost") nextLevel(state.level, true);
   else if (e.key === "0") resetCam(true);
 });
 window.addEventListener("resize", () => { clearTimeout(resize.t); resize.t = setTimeout(resize, 60); });
-document.addEventListener("visibilitychange", () => { state.lastTick = now(); if (document.hidden && state.phase === "play") saveCur(); });
-window.addEventListener("pagehide", () => { if (state.phase === "play") saveCur(); });
+document.addEventListener("visibilitychange", () => { state.lastTick = now(); if (document.hidden) saveCur(); });
+window.addEventListener("pagehide", () => saveCur());
 
 /* ---------- Start ---------- */
 resize();
 const startLevel = save.cur && save.cur.level ? save.cur.level : Math.max(1, save.unlocked);
 loadLevel(startLevel, { instantBg: true });
 
-// Für Tests: window.__knoten.solve() legt die hinterlegte Lösung an
+// Für Tests
 window.__knoten = {
-  state, save,
-  solve() { const g = state.graph; finishIntro(); g.sol.forEach((p, i) => { state.nodes[i].u = p.x; state.nodes[i].v = p.y; }); recompute(true); solve(0); },
+  state, save, genLevel, doSwap,
+  solve() { finishIntro(); state.slot = range(state.graph.n); recompute(true); solve(0); },
   level: (n) => loadLevel(n, { fresh: true }),
 };
 })();
