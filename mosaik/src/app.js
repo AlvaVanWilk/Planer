@@ -81,15 +81,14 @@
      marble gesetzter Stein im Modus Klassisch
      matte  Hintergrundstein nach der Enthüllung: unglasierte Keramik
      hole / holeDot  leeres Feld: vertieftes Mörtelbett (Farbe tönt es leicht) */
-  const NV = 6, PAD = 0.14;
+  const NV = 6, PAD = 0.2;
   const cache = new Map();
   // Steinbilder freigeben: Safari zählt jede Zeichenfläche gegen ein festes Speicherlimit
   function flush() { for (const cv of cache.values()) { cv.width = cv.height = 0; } cache.clear(); }
   const srng = seed => { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
   const shade = (a, k) => k >= 0 ? mix(a, [255, 255, 255], k) : deep(a, -k);
-  // Abdunkeln wie dickes Glas: satter und wärmer statt grau
-  function deep(a, k) {
-    let [r, g, b] = a.map(v => v / 255);
+  function toHsl(a) {
+    const [r, g, b] = a.map(v => v / 255);
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, dd = mx - mn;
     let h = 0, sat = 0;
     if (dd) {
@@ -97,13 +96,26 @@
       h = mx === r ? ((g - b) / dd) % 6 : mx === g ? (b - r) / dd + 2 : (r - g) / dd + 4;
       h *= 60; if (h < 0) h += 360;
     }
-    if (l > 0.8) sat *= 0.3; // weißes Glas dunkelt kühl, nicht orange
-    else if (h > 38 && h < 75 && sat > 0.25) h -= (h - 30) * 0.55 * k * 1.6; // Gelb wird zu Bernstein
-    const L = l * (1 - k * 0.85), S = Math.min(1, sat * (1 + k * 0.5));
-    const C = (1 - Math.abs(2 * L - 1)) * S, X = C * (1 - Math.abs(((h / 60) % 2) - 1)), m = L - C / 2;
+    return [h, Math.min(1, sat), l];
+  }
+  function fromHsl(h, sat, l) {
+    const C = (1 - Math.abs(2 * l - 1)) * sat, X = C * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - C / 2;
     const [rr, gg, bb] = h < 60 ? [C, X, 0] : h < 120 ? [X, C, 0] : h < 180 ? [0, C, X] : h < 240 ? [0, X, C] : h < 300 ? [X, 0, C] : [C, 0, X];
     return [(rr + m) * 255, (gg + m) * 255, (bb + m) * 255];
   }
+  // Abdunkeln wie dickes Glas: satter und wärmer statt grau
+  function deep(a, k) {
+    let [h, sat, l] = toHsl(a);
+    if (l > 0.8) sat *= 0.3; // weißes Glas dunkelt kühl, nicht orange
+    else if (h > 38 && h < 75 && sat > 0.25) h -= (h - 30) * 0.55 * k * 1.6; // Gelb wird zu Bernstein
+    return fromHsl(h, Math.min(1, sat * (1 + k * 0.5)), l * (1 - k * 0.85));
+  }
+  // Aufhellen wie Glas im Gegenlicht: heller und leuchtender, nicht milchig
+  function lift(a, k) {
+    const [h, sat, l] = toHsl(a);
+    return fromHsl(h, Math.min(1, sat * (1 + k * 0.9) + (sat > 0.15 ? k * 0.15 : 0)), l + (1 - l) * k * 0.75);
+  }
+
   const rgba = (a, al) => "rgba(" + Math.round(a[0]) + "," + Math.round(a[1]) + "," + Math.round(a[2]) + "," + al + ")";
   const parseCol = s => s[0] === "#" ? hex(s) : s.match(/\d+/g).slice(0, 3).map(Number);
 
@@ -272,50 +284,50 @@
     }
   }
 
-  // Geschliffener Glasstein: Facetten, durchleuchtete Deckfläche, Spiegelreflex, farbiger Schein
+  // Juwelglas: leuchtender Kern, gewölbter Glanz, Lichtsaum unten, Funkelpunkt, farbiger Schein
   function paintGlass(c, S, P, base, v) {
-    const poly = (pts, fill) => { c.beginPath(); pts.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.fillStyle = fill; c.fill(); };
+    const X = f => P + S * f;
     // farbiger Lichtschein auf dem Mörtel und kurzer Kontaktschatten
     c.save();
-    c.shadowColor = rgba(shade(base, 0.15), 0.5); c.shadowBlur = S * 0.13; c.shadowOffsetY = S * 0.03;
-    stonePath(c, v, P, P, S); c.fillStyle = rgba(base, 1); c.fill();
-    c.shadowColor = "rgba(0,0,0,.6)"; c.shadowBlur = S * 0.04; c.shadowOffsetY = S * 0.035;
+    c.shadowColor = rgba(lift(base, 0.35), 0.8); c.shadowBlur = S * 0.2; c.shadowOffsetY = S * 0.02;
+    stonePath(c, v, P, P, S, 0, 0.18); c.fillStyle = rgba(base, 1); c.fill();
+    c.shadowColor = "rgba(0,0,0,.55)"; c.shadowBlur = S * 0.035; c.shadowOffsetY = S * 0.03;
     c.fill();
     c.restore();
 
-    c.save(); stonePath(c, v, P, P, S); c.clip();
-    const b = S * 0.12, x0 = P, y0 = P, x1 = P + S, y1 = P + S, i0 = P + b, j0 = P + b, i1 = P + S - b, j1 = P + S - b;
-    // Facetten, Licht von oben links
-    poly([[x0, y0], [x1, y0], [i1, j0], [i0, j0]], rgba(shade(base, 0.42), 1));
-    poly([[x0, y0], [i0, j0], [i0, j1], [x0, y1]], rgba(shade(base, 0.16), 1));
-    poly([[x1, y0], [x1, y1], [i1, j1], [i1, j0]], rgba(deep(base, 0.28), 1));
-    poly([[x0, y1], [i0, j1], [i1, j1], [x1, y1]], rgba(deep(base, 0.45), 1));
-    // Deckfläche: oben tiefer, unten von innen durchleuchtet
-    const fr = S * 0.06;
-    rr(c, i0, j0, i1 - i0, j1 - j0, fr);
-    const fg = c.createLinearGradient(0, j0, 0, j1);
-    fg.addColorStop(0, rgba(deep(base, 0.22), 1)); fg.addColorStop(0.55, rgba(base, 1)); fg.addColorStop(1, rgba(shade(base, 0.24), 1));
-    c.fillStyle = fg; c.fill();
-    c.save(); rr(c, i0, j0, i1 - i0, j1 - j0, fr); c.clip();
-    const gl = c.createRadialGradient(P + S * 0.6, P + S * 0.78, 0, P + S * 0.6, P + S * 0.78, S * 0.45);
-    gl.addColorStop(0, rgba(shade(base, 0.55), 0.55)); gl.addColorStop(1, rgba(shade(base, 0.55), 0));
-    c.fillStyle = gl; c.fillRect(i0, j0, i1 - i0, j1 - j0);
-    // Spiegelreflex mit scharfer Kante
-    const w = i1 - i0, h = j1 - j0;
-    c.beginPath(); c.moveTo(i0, j0); c.lineTo(i0 + w * 0.92, j0); c.quadraticCurveTo(i0 + w * 0.5, j0 + h * 0.18, i0, j0 + h * 0.62); c.closePath();
-    const rg = c.createLinearGradient(i0, j0, i0 + w * 0.5, j0 + h * 0.5);
-    rg.addColorStop(0, "rgba(255,255,255,.34)"); rg.addColorStop(1, "rgba(255,255,255,.06)");
-    c.fillStyle = rg; c.fill();
+    c.save(); stonePath(c, v, P, P, S, 0, 0.18); c.clip();
+    // Körper: Kern leuchtet, Rand satt und tief
+    const core = c.createRadialGradient(X(0.5), X(0.62), S * 0.04, X(0.5), X(0.55), S * 0.78);
+    core.addColorStop(0, rgba(lift(base, 0.55), 1));
+    core.addColorStop(0.38, rgba(lift(base, 0.18), 1));
+    core.addColorStop(0.75, rgba(base, 1));
+    core.addColorStop(1, rgba(deep(base, 0.5), 1));
+    c.fillStyle = core; c.fillRect(P, P, S, S);
+    // gebündeltes Licht an der Unterkante
+    const caus = c.createRadialGradient(X(0.5), X(0.98), 0, X(0.5), X(0.98), S * 0.42);
+    caus.addColorStop(0, rgba(lift(base, 0.8), 0.8)); caus.addColorStop(1, rgba(lift(base, 0.8), 0));
+    c.fillStyle = caus; c.fillRect(P, P, S, S);
+    // gewölbter Glanz über der oberen Hälfte
+    rr(c, X(0.09), X(0.06), S * 0.82, S * 0.42, S * 0.2);
+    const gl = c.createLinearGradient(0, X(0.06), 0, X(0.48));
+    gl.addColorStop(0, "rgba(255,255,255,.5)"); gl.addColorStop(0.5, "rgba(255,255,255,.14)"); gl.addColorStop(1, "rgba(255,255,255,.02)");
+    c.fillStyle = gl; c.fill();
+    // Saum: oben hell, unten in der Eigenfarbe leuchtend
+    const rim = c.createLinearGradient(0, P, 0, P + S);
+    rim.addColorStop(0, "rgba(255,255,255,.7)"); rim.addColorStop(0.45, "rgba(255,255,255,.08)");
+    rim.addColorStop(0.75, rgba(lift(base, 0.5), 0.15)); rim.addColorStop(1, rgba(lift(base, 0.85), 0.8));
+    c.lineWidth = Math.max(1.2, S * 0.045); c.strokeStyle = rim;
+    stonePath(c, v, P, P, S, S * 0.025, 0.16); c.stroke();
     c.restore();
-    // feine Lichtkanten
-    c.lineWidth = Math.max(1, S * 0.016);
-    c.strokeStyle = "rgba(255,255,255,.55)";
-    c.beginPath(); c.moveTo(i0 + fr, j0 + 0.5); c.lineTo(i1 - fr, j0 + 0.5); c.stroke();
-    c.strokeStyle = "rgba(255,255,255,.35)";
-    c.beginPath(); c.moveTo(x0 + S * 0.06, y0 + 0.8); c.lineTo(x1 - S * 0.06, y0 + 0.8); c.stroke();
+    // Funkelpunkt
+    c.save(); c.translate(X(0.24), X(0.17)); c.rotate(-0.5);
+    const sp = c.createRadialGradient(0, 0, 0, 0, 0, S * 0.09);
+    sp.addColorStop(0, "rgba(255,255,255,.95)"); sp.addColorStop(0.35, "rgba(255,255,255,.5)"); sp.addColorStop(1, "rgba(255,255,255,0)");
+    c.scale(1, 0.55); c.fillStyle = sp; c.beginPath(); c.arc(0, 0, S * 0.09, 0, 7); c.fill();
     c.restore();
-    c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.6), 0.6);
-    stonePath(c, v, P, P, S); c.stroke();
+    // feine Kontur
+    c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.65), 0.55);
+    stonePath(c, v, P, P, S, 0, 0.18); c.stroke();
   }
 
   // Mörtelbett als Muster für das Brett
