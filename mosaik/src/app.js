@@ -35,7 +35,7 @@
       for (let i = 0; i < N; i++) vr[i] = ((Math.imul(i + 7, 2654435761) >>> 0) ^ (pi * 131 + wi * 17)) % 6;
       const z = PUZ[p.id];
       const pic = Object.assign({}, p, {
-        w, wi, pi, H, W, N, sol, col, rgbs, nFill, vr, idx: PICS.length,
+        w, wi, pi, H, W, N, sol, col, rgbs, nFill, vr, idx: PICS.length, coop: !!w.coop,
         avg: rgb(acc.map(v => v / Math.max(1, nFill))),
         clues: Array.from(z.c, ch => (ch === "." ? -1 : +ch)),
         given: Array.from(z.g, ch => (ch === "." ? -1 : +ch)),
@@ -44,19 +44,23 @@
     });
   });
   const byId = id => PICS.find(p => p.id === id);
+  const REG = PICS.filter(p => !p.coop);              // Bilder mit Sternen und Punkten
+  const COOP = WORLDS.find(w => w.coop);              // die Serie der Gemeinschaftswerke
 
   /* ---------- Speicher ---------- */
   // Spielstand je Person: ohne Konto unter "mosaik.v1", mit Konto unter "mosaik.v1:name"
   const ANON = "mosaik.v1";
   let KEY = ANON;
   const DEF = { mode: "zauber", sound: true, music: true, auto: false };
-  const save = { solved: {}, prog: {}, set: Object.assign({}, DEF), help: false, last: null };
+  const save = { solved: {}, prog: {}, coop: {}, coopDone: {}, set: Object.assign({}, DEF), help: false, last: null };
   function useSave(obj) {
     for (const k of Object.keys(save)) delete save[k];
-    Object.assign(save, { solved: {}, prog: {}, help: false, last: null }, obj || {});
+    Object.assign(save, { solved: {}, prog: {}, coop: {}, coopDone: {}, help: false, last: null }, obj || {});
     save.set = Object.assign({}, DEF, (obj && obj.set) || {});
     if (!save.solved || Array.isArray(save.solved)) save.solved = {};
     if (!save.prog || Array.isArray(save.prog)) save.prog = {};
+    if (!save.coop || Array.isArray(save.coop)) save.coop = {};
+    if (!save.coopDone || Array.isArray(save.coopDone)) save.coopDone = {};
     AU.setSound(save.set.sound); AU.setMusic(save.set.music);
   }
   function readLocal(key) { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; } }
@@ -127,7 +131,7 @@
     KEY = ANON + ":" + name.toLowerCase();
     useSave(serverSave || readLocal(KEY) || {});
     persist(true);
-    renderHome(); accountPill();
+    renderHome(); accountPill(); refreshCoopList();
   }
   function signedOut(msg) {
     ACC.token = null; ACC.name = null; rememberAccount();
@@ -242,7 +246,7 @@
     const key = style + "|" + color + "|" + S + "|" + v;
     let cv = cache.get(key);
     if (cv) return cv;
-    if (cache.size > 700) flush();
+    if (cache.size > (G && G.pic.coop ? 2200 : 700)) flush();
     const P = Math.ceil(S * PAD);
     cv = document.createElement("canvas"); cv.width = cv.height = S + 2 * P; cv.S = S; cv.pad = P;
     paint(cv.getContext("2d", { willReadFrequently: true }), S, P, style, color, v);
@@ -516,7 +520,7 @@
   function renderHome() {
     const st = totalStars(), rk = rankOf(st);
     $("#rankName").textContent = RANKS[rk][1];
-    const lo = RANKS[rk][0], hi = rk + 1 < RANKS.length ? RANKS[rk + 1][0] : PICS.length * 3;
+    const lo = RANKS[rk][0], hi = rk + 1 < RANKS.length ? RANKS[rk + 1][0] : REG.length * 3;
     requestAnimationFrame(() => { $("#rankBar").style.width = (rk + 1 < RANKS.length ? clamp((st - lo) / (hi - lo)) * 100 : 100) + "%"; });
     $("#starCount").textContent = st + " ★";
     let top = 0; WORLDS.forEach((w, i) => { if (unlocked(i) && !w.special) top = i; });
@@ -534,8 +538,9 @@
     }
 
     const box = $("#worlds"); box.innerHTML = "";
-    const shown = WORLDS.map((w, wi) => [w, wi]).sort((a, b) => (b[0].special ? 1 : 0) - (a[0].special ? 1 : 0));
+    const shown = WORLDS.map((w, wi) => [w, wi]).sort((a, b) => (b[0].coop ? 2 : b[0].special ? 1 : 0) - (a[0].coop ? 2 : a[0].special ? 1 : 0));
     shown.forEach(([w, wi]) => {
+      if (w.coop) { box.appendChild(coopCard(w)); return; }
       const open = unlocked(wi), n = solvedIn(w);
       const card = document.createElement("article");
       card.className = "world" + (open ? "" : " locked") + (w.special ? " special" : "");
@@ -573,6 +578,40 @@
     logoTiles();
   }
 
+  /* ---------- Gemeinschaftswerke: Übersicht ---------- */
+  let coopList = null;
+  const coopDone = p => !!(save.coopDone[p.id] || (coopList && coopList[p.id] && coopList[p.id].done));
+  const coopOpen = p => p.pi === 0 || coopDone(COOP.list[p.pi - 1]);
+  function coopKnown(p) {
+    if (coopList && coopList[p.id] && coopList[p.id].total) return coopList[p.id].known / coopList[p.id].total;
+    const c = save.coop[p.id]; if (!c || !c.st) return 0;
+    let k = 0; for (const ch of c.st) if (ch !== "?") k++; return k / p.N;
+  }
+  function coopCard(w) {
+    const card = document.createElement("article");
+    card.className = "world special coopw";
+    card.style.setProperty("--a", w.mood[0]); card.style.setProperty("--b", w.mood[1]); card.style.setProperty("--c", w.mood[2]);
+    const active = new Set(); if (coopList) for (const id in coopList) (coopList[id].active || []).forEach(n => { if (n !== ACC.name) active.add(n); });
+    const note = ACC.online && ACC.token ? (active.size ? "Gerade dabei: " + [...active].map(esc).join(", ") : "Alle aus der Familie legen am selben Bild.")
+      : ACC.online ? "Melde dich an, um mit der Familie gemeinsam zu legen." : "Ohne eigenen Webspace legst du hier allein.";
+    card.innerHTML = `<span class="badge">Gemeinsam · immer offen</span><header><h2>${w.name}</h2><span class="meta">${w.list[0].W}×${w.list[0].H}</span></header><p>${w.sub}. ${note}</p><div class="cthumbs"></div>`;
+    const th = card.querySelector(".cthumbs");
+    w.list.forEach(p => {
+      const b = document.createElement("button"), open = coopOpen(p), done = coopDone(p), k = coopKnown(p);
+      b.className = "cthumb" + (open ? "" : " locked");
+      if (done) { const cv = document.createElement("canvas"); b.appendChild(cv); drawMosaic(cv, p, 200); b.insertAdjacentHTML("beforeend", `<span class="ccap">${p.title}</span>`); }
+      else b.innerHTML = `<span class="cnum">${open ? Math.floor(k * 100) + " %" : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'}</span><span class="ccap">${open ? "Gemeinschaftswerk " + (p.pi + 1) : "Öffnet sich, wenn Werk " + p.pi + " fertig ist"}</span><span class="pr"><i style="width:${Math.round(k * 100)}%"></i></span>`;
+      if (open) b.onclick = () => { AU.init(); AU.ui(); startGame(p); }; else b.disabled = true;
+      th.appendChild(b);
+    });
+    return card;
+  }
+  async function refreshCoopList() {
+    if (!ACC.online || !ACC.token || !COOP) return;
+    const j = await api({ action: "coop_list", name: ACC.name, token: ACC.token, ids: COOP.list.map(p => p.id) });
+    if (j.ok) { coopList = j.list; if (screen === "home") renderHome(); }
+  }
+
   function nextPic(pref) {
     if (pref && !save.solved[pref.id]) return pref;
     for (let wi = 0; wi < WORLDS.length; wi++) {
@@ -608,21 +647,22 @@
 
   /* ---------- Spiel ---------- */
   const board = $("#board"), bctx = board.getContext("2d");
-  const L = { s: 30, cw: 0, ch: 0, d: 1, xs: [], ys: [], g: 0 };
+  const L = { s: 30, cw: 0, ch: 0, d: 1, xs: [], ys: [], g: 0, cam: false, cx: 0, cy: 0, z: 1, zMin: 0.3, zMax: 1.7, wW: 0, wH: 0, SS: 0 };
   let G = null;
 
   function startGame(pic) {
-    flush();
+    flush(); coopStop();
     AU.setWorld(pic.w); setMood(pic.w);
     const N = pic.N, st = new Int8Array(N).fill(-1);
     pic.given.forEach((v, i) => { if (v >= 0) st[i] = v; });
-    const pr = save.prog[pic.id];
+    const pr = pic.coop ? save.coop[pic.id] : save.prog[pic.id];
     let mistakes = 0, hints = 0, elapsed = 0;
     if (pr && pr.st && pr.st.length === N) {
       for (let i = 0; i < N; i++) { const ch = pr.st[i]; if (ch === "1") st[i] = 1; else if (ch === "0") st[i] = 0; }
       mistakes = pr.m || 0; hints = pr.h || 0; elapsed = pr.t || 0;
     }
-    const zauber = save.set.mode === "zauber";
+    const zauber = pic.coop || save.set.mode === "zauber";   // gemeinsam immer mit Prüfung, sonst gäbe es Widersprüche
+    if (pic.coop) mistakes = 0;
     if (zauber) for (let i = 0; i < N; i++) if (st[i] >= 0 && st[i] !== pic.sol[i]) st[i] = -1;
     const lives = livesFor(pic);
     if (zauber && mistakes >= lives) { // aus einem alten Spielstand: frisch beginnen
@@ -635,9 +675,12 @@
       anim: new Array(N).fill(null), cs: new Int8Array(N), ct: new Float64Array(N),
       hint: null, done: false, reveal: null, actions: 0, press: -1, lastI: -1, tick: now(), rings: [],
       firstMistake: !mistakes, lives, over: false,
+      coop: pic.coop ? { ver: -1, queue: [], auto: [], glow: new Map(), active: [], by: {}, drops: 5, dropT: now(), wait: 0, colors: {} } : null,
     };
+    if (pic.coop) G.lives = 5;
     $("#game").classList.remove("broken");
-    $("#gWorld").textContent = pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
+    $("#gWorld").textContent = pic.coop ? "Gemeinschaftswerk " + (pic.pi + 1) : pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
+    $("#game").classList.toggle("coopgame", !!pic.coop);
     $("#gRiddle").textContent = pic.riddle;
     $("#win").hidden = true; $("#win").innerHTML = "";
     $("#game").classList.remove("won"); board.style.transform = board.style.transition = ""; $("#boardShadow").style.transform = $("#boardShadow").style.transition = "";
@@ -651,7 +694,8 @@
     save.last = pic.id; persist();
     requestWake();
     kick();
-    warm(pic);
+    if (!pic.coop) warm(pic);
+    if (pic.coop) { coopStart(); if (!save.coopHelp) { save.coopHelp = true; persist(); setTimeout(openCoopHelp, 500); } }
     coach("start");
     if (!save.help) { save.help = true; persist(); setTimeout(openHelp, 450); }
   }
@@ -682,6 +726,26 @@
     if (!G) return;
     const wrap = $("#boardWrap").getBoundingClientRect();
     const { W, H } = G.pic;
+    L.cam = !!G.pic.coop;
+    $("#mini").hidden = $("#zoomBox").hidden = !L.cam;
+    $("#boardShadow").style.display = L.cam ? "none" : "";
+    if (L.cam) {
+      // Großes Bild: Leinwand = Ausschnitt, die Welt dahinter lässt sich schieben und zoomen
+      L.s = 34; L.d = Math.min(2, window.devicePixelRatio || 1);
+      L.cw = Math.round(wrap.width); L.ch = Math.round(wrap.height);
+      L.wW = L.s * (W + (W - 1) * 0.08 + 0.7); L.wH = L.s * (H + (H - 1) * 0.08 + 0.7);
+      L.zMin = Math.min(L.cw / L.wW, L.ch / L.wH) * 0.97;
+      board.style.width = L.cw + "px"; board.style.height = L.ch + "px"; board.style.left = "0px"; board.style.top = "0px";
+      board.width = Math.round(L.cw * L.d); board.height = Math.round(L.ch * L.d);
+      if (!G.camInit) {
+        G.camInit = true;
+        const v = save.coop[G.pic.id] && save.coop[G.pic.id].view;
+        if (v) { L.z = v.z; L.cx = v.cx; L.cy = v.cy; } else { L.z = Math.max(L.zMin, 0.85); L.cx = (L.wW - L.cw / L.z) / 2; L.cy = (L.wH - L.ch / L.z) / 2; }
+      }
+      clampCam(); geom(1); L.tray = L.light = null; L.SS = 0; wantSprites();
+      fxSize(); drawMini(true); kick();
+      return;
+    }
     const ux = W + (W - 1) * 0.08 + 0.7;
     const uy = H + (H - 1) * 0.08 + 0.7;
     const s = Math.max(10, Math.floor(Math.min((wrap.width - 4) / ux, (wrap.height - 4) / uy, 70)));
@@ -726,7 +790,7 @@
     const s = L.s, g = s * 0.08 * k, bx = 0, { W, H } = G.pic;
     const tw = W * s + (W - 1) * g + Math.floor((W - 1) / 5) * bx;
     const th = H * s + (H - 1) * g + Math.floor((H - 1) / 5) * bx;
-    const ox = (L.cw - tw) / 2, oy = (L.ch - th) / 2;
+    const ox = ((L.cam ? L.wW : L.cw) - tw) / 2, oy = ((L.cam ? L.wH : L.ch) - th) / 2;
     for (let q = 0; q < W; q++) L.xs[q] = ox + q * (s + g) + Math.floor(q / 5) * bx;
     for (let r = 0; r < H; r++) L.ys[r] = oy + r * (s + g) + Math.floor(r / 5) * bx;
     L.xs.length = W; L.ys.length = H; L.g = g;
@@ -740,12 +804,56 @@
   }
   function cellAt(x, y) {
     const r = board.getBoundingClientRect();
-    const q = axisIdx(L.xs, x - r.left), w = axisIdx(L.ys, y - r.top);
+    let lx = x - r.left, ly = y - r.top;
+    if (L.cam) { lx = lx / L.z + L.cx; ly = ly / L.z + L.cy; }
+    const q = axisIdx(L.xs, lx), w = axisIdx(L.ys, ly);
     return q < 0 || w < 0 ? -1 : w * G.pic.W + q;
   }
   function cellCenter(i) {
     const r = board.getBoundingClientRect(), W = G.pic.W;
-    return [r.left + L.xs[i % W] + L.s / 2, r.top + L.ys[Math.floor(i / W)] + L.s / 2];
+    const wx = L.xs[i % W] + L.s / 2, wy = L.ys[Math.floor(i / W)] + L.s / 2;
+    return L.cam ? [r.left + (wx - L.cx) * L.z, r.top + (wy - L.cy) * L.z] : [r.left + wx, r.top + wy];
+  }
+  function clampCam() {
+    L.z = clamp(L.z, L.zMin, L.zMax);
+    const vw = L.cw / L.z, vh = L.ch / L.z;
+    L.cx = vw >= L.wW ? (L.wW - vw) / 2 : clamp(L.cx, -L.s, L.wW - vw + L.s);
+    L.cy = vh >= L.wH ? (L.wH - vh) / 2 : clamp(L.cy, -L.s, L.wH - vh + L.s);
+  }
+  // Zoomen um einen Bildschirmpunkt
+  function zoomAt(sx, sy, z) {
+    const r = board.getBoundingClientRect(), px = sx - r.left, py = sy - r.top;
+    const wx = px / L.z + L.cx, wy = py / L.z + L.cy;
+    L.z = clamp(z, L.zMin, L.zMax); L.cx = wx - px / L.z; L.cy = wy - py / L.z;
+    clampCam(); camMoved();
+  }
+  let spriteT = 0;
+  function camMoved() { kick(); drawMini(false); clearTimeout(spriteT); spriteT = setTimeout(wantSprites, 220); if (G && G.pic.coop) { save.coop[G.pic.id] = Object.assign(save.coop[G.pic.id] || {}, { view: { z: L.z, cx: L.cx, cy: L.cy } }); persist(); } }
+  // Steine in der passenden Auflösung im Hintergrund vorbereiten, dann umschalten
+  const qSize = S => Math.round(Math.pow(1.25, Math.round(Math.log(clamp(S, 10, 130)) / Math.log(1.25))));
+  let sizeJob = 0;
+  function wantSprites() {
+    if (!G || !L.cam) return;
+    const want = qSize(L.s * L.z * L.d);
+    if (want === L.SS) return;
+    if (!L.SS) { L.SS = want; kick(); return; }
+    const pic = G.pic, job = ++sizeJob, keys = coopKinds(pic);
+    let k = 0;
+    const step = () => {
+      if (job !== sizeJob || !G || G.pic !== pic) return;
+      const t0 = now();
+      while (k < keys.length && now() - t0 < 10) { const [st, c, v] = keys[k++]; sprite(st, c, want, v); }
+      if (k < keys.length) setTimeout(step, 16); else { L.SS = want; numCache.clear(); kick(); }
+    };
+    step();
+  }
+  function coopKinds(pic) {
+    if (pic.kinds) return pic.kinds;
+    const seen = new Set(), out = [];
+    const addK = (st, c, v) => { const key = st + c + v; if (!seen.has(key)) { seen.add(key); out.push([st, c, v]); } };
+    for (let v = 0; v < 6; v++) { addK("slate", "", v); addK("hole", "", v); addK("holeDot", "", v); }
+    for (let i = 0; i < pic.N; i++) if (pic.sol[i]) addK("gem", pic.col[i], lay(i).gv);
+    return (pic.kinds = out);
   }
 
   function setTool(t) {
@@ -778,12 +886,17 @@
 
   function hud() {
     const sStars = starsFor(G);
-    $("#gStars").innerHTML = [0, 1, 2].map(k => '<i class="' + (k < sStars ? "" : "off") + '">★</i>').join("");
+    $("#gStars").innerHTML = G.coop ? "" : [0, 1, 2].map(k => '<i class="' + (k < sStars ? "" : "off") + '">★</i>').join("");
     const lv = $("#gLives");
     lv.hidden = !G.zauber;
-    const left = Math.max(0, G.lives - G.mistakes);
+    const left = G.coop ? G.coop.drops : Math.max(0, G.lives - G.mistakes);
+    if (G.coop) {
+      let k = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) k++;
+      const act = G.coop.active.filter(n => n !== ACC.name);
+      $("#gWorld").textContent = "Gemeinschaftswerk " + (G.pic.pi + 1) + " · " + Math.floor(k / G.N * 100) + " %" + (act.length ? " · " + act.join(", ") + (act.length === 1 ? " legt" : " legen") + " mit" : "");
+    }
     lv.innerHTML = Array.from({ length: G.lives }, (_, k) => '<i class="' + (k < left ? "" : "gone") + '"></i>').join("");
-    lv.setAttribute("aria-label", left + " von " + G.lives + " Versuchen übrig");
+    lv.setAttribute("aria-label", left + " von " + G.lives + (G.coop ? " Tropfen" : " Versuchen") + " übrig");
     let known = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) known++;
     $("#gProg").style.width = (known / G.N * 100) + "%";
     $("#tUndo").disabled = !G.undo.length;
@@ -804,6 +917,19 @@
 
   function applyAt(i, stroke) {
     const st = G.st, sol = G.pic.sol;
+    if (G.coop) {
+      if (st[i] >= 0) return;
+      if (G.coop.wait > now()) { stroke.dead = true; coopWaitToast(); return; }
+      const want = stroke.val;
+      st[i] = sol[i]; G.coop.queue.push([i, sol[i]]);
+      if (sol[i] !== want) {
+        G.anim[i] = { t: now(), k: "wrong", from: -1 }; stroke.dead = true; AU.oops();
+        G.coop.drops--; G.coop.dropT = now();
+        if (G.coop.drops <= 0) { G.coop.wait = now() + 30000; coopWaitToast(); }
+        else toast("Das passt nicht. Noch <b>" + G.coop.drops + "</b> " + (G.coop.drops === 1 ? "Tropfen" : "Tropfen") + ", alle 20 Sekunden kommt einer zurück.", 3400);
+      } else { G.anim[i] = { t: now(), k: want ? "fill" : "mark", from: -1 }; if (want) { AU.hit(); glowAt(i, G.pic.col[i]); } else AU.empty(); }
+      G.lastI = i; G.actions++; hud(); return;
+    }
     if (G.zauber) {
       if (st[i] >= 0) return;
       const want = stroke.val;
@@ -832,6 +958,7 @@
 
   function afterChange() {
     clueStates(false);
+    if (G.coop) { miniLater(); coopFlushSoon(); G.snapDirty = true; }
     if (G.zauber && save.set.auto) autoEmpty();
     if (G.hint && G.hint.cells && G.hint.cells.every(([x]) => G.st[x] >= 0)) G.hint = null;
     if (G.hint && G.hint.wrong != null && G.st[G.hint.wrong] === G.pic.sol[G.hint.wrong]) G.hint = null;
@@ -856,6 +983,7 @@
   function saveProg() {
     if (!G || G.done || G.over) return;
     let s = ""; for (let i = 0; i < G.N; i++) s += G.st[i] < 0 ? "?" : G.st[i];
+    if (G.coop) { save.coop[G.pic.id] = Object.assign(save.coop[G.pic.id] || {}, { st: s }); persist(); return; }
     save.prog[G.pic.id] = { st: s, m: G.mistakes, h: G.hints, t: Math.round(G.elapsed) };
     persist();
   }
@@ -884,6 +1012,19 @@
     if (G.over) return;
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
+    if (L.cam && ptrs.size === 2) {
+      // zwei Finger: schieben und zoomen
+      clearTimeout(holdTimer);
+      if (stroke && stroke.pending) stroke = null;
+      const [a, b] = [...ptrs.values()], r = board.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      G.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: L.z, wx: (mx - r.left) / L.z + L.cx, wy: (my - r.top) / L.z + L.cy };
+      return;
+    }
+    if (L.cam && ptrs.size === 1 && (e.button === 1 || spaceDown)) {
+      G.pan = { x: e.clientX, y: e.clientY, cx: L.cx, cy: L.cy }; try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
+      return;
+    }
     if (ptrs.size === 2) {
       clearTimeout(holdTimer);
       if (stroke && now() - stroke.t0 < 350 && !G.zauber) {
@@ -894,7 +1035,11 @@
     if (ptrs.size > 2) return;
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
-    if (i < 0) return;
+    if (i < 0) {
+      if (L.cam) { G.pan = { x: e.clientX, y: e.clientY, cx: L.cx, cy: L.cy }; }   // Rand: schieben
+      return;
+    }
+    if (G.coop && G.coop.wait > now()) { coopWaitToast(); return; }
     G.press = i;
     clearTimeout(holdTimer);
     // Maus und Stift: linke Taste = Werkzeug, rechte Taste = leer. Sofort anwenden.
@@ -925,6 +1070,18 @@
     afterChange();
   }
   board.addEventListener("pointermove", e => {
+    if (G && ptrs.has(e.pointerId)) { const pp = ptrs.get(e.pointerId); pp.x = e.clientX; pp.y = e.clientY; }
+    if (G && L.cam && G.pinch && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()], r = board.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      L.z = clamp(G.pinch.z0 * Math.hypot(a.x - b.x, a.y - b.y) / G.pinch.d0, L.zMin, L.zMax);
+      L.cx = G.pinch.wx - (mx - r.left) / L.z; L.cy = G.pinch.wy - (my - r.top) / L.z;
+      clampCam(); camMoved(); return;
+    }
+    if (G && L.cam && G.pan) {
+      L.cx = G.pan.cx - (e.clientX - G.pan.x) / L.z; L.cy = G.pan.cy - (e.clientY - G.pan.y) / L.z;
+      clampCam(); camMoved(); return;
+    }
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
     let i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
@@ -952,6 +1109,8 @@
   const up = e => {
     if (!G) { ptrs.delete(e.pointerId); stroke = null; return; }
     ptrs.delete(e.pointerId);
+    if (G.pinch && ptrs.size < 2) { G.pinch = null; if (stroke) stroke = null; G.press = -1; kick(); return; }
+    if (G.pan && ptrs.size === 0) { G.pan = null; return; }
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
       clearTimeout(holdTimer);
@@ -964,6 +1123,51 @@
   board.addEventListener("pointerup", up);
   board.addEventListener("pointercancel", up);
   board.addEventListener("contextmenu", e => e.preventDefault());
+  // Mausrad und Trackpad: Strg + Rad (oder Zwei-Finger-Zoom) zoomt, sonst wird geschoben
+  board.addEventListener("wheel", e => {
+    if (!G || !L.cam) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, L.z * Math.exp(-e.deltaY * 0.01));
+    else { L.cx += e.deltaX / L.z; L.cy += e.deltaY / L.z; clampCam(); camMoved(); }
+  }, { passive: false });
+  let spaceDown = false;
+  window.addEventListener("keyup", e => { if (e.key === " ") spaceDown = false; });
+  // Zoom-Knöpfe und Übersichtskarte
+  const zoomBy = f => { const r = board.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, L.z * f); };
+  $("#zIn").onclick = () => { AU.ui(); zoomBy(1.4); };
+  $("#zOut").onclick = () => { AU.ui(); zoomBy(1 / 1.4); };
+  $("#zAll").onclick = () => { AU.ui(); L.z = L.zMin; clampCam(); camMoved(); };
+  const mini = $("#mini"), mctx = mini.getContext("2d");
+  let miniBase = null, miniT = 0;
+  function drawMini(rebuild) {
+    if (!G || !L.cam) return;
+    const pic = G.pic, mw = Math.min(190, Math.max(120, L.cw * 0.24)), mh = mw * pic.H / pic.W, dd = L.d;
+    if (mini.width !== Math.round(mw * dd)) { mini.width = Math.round(mw * dd); mini.height = Math.round(mh * dd); mini.style.width = mw + "px"; mini.style.height = mh + "px"; rebuild = true; }
+    if (rebuild || !miniBase) {
+      if (!miniBase) miniBase = document.createElement("canvas");
+      miniBase.width = pic.W; miniBase.height = pic.H;
+      const b = miniBase.getContext("2d"), img = b.createImageData(pic.W, pic.H);
+      for (let i = 0; i < pic.N; i++) {
+        const v = G.st[i], c = v === 1 ? pic.rgbs[i] : v === 0 ? [34, 30, 44] : [150, 146, 160];
+        img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
+      }
+      b.putImageData(img, 0, 0);
+    }
+    mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.clearRect(0, 0, mini.width, mini.height);
+    mctx.imageSmoothingEnabled = false; mctx.drawImage(miniBase, 0, 0, mini.width, mini.height);
+    const k = mini.width / L.wW;
+    mctx.lineWidth = 2 * dd; mctx.strokeStyle = "rgba(255,255,255,.95)";
+    mctx.strokeRect(L.cx * k, L.cy * k, (L.cw / L.z) * k, (L.ch / L.z) * k);
+  }
+  function miniLater() { clearTimeout(miniT); miniT = setTimeout(() => drawMini(true), 250); }
+  const miniJump = e => {
+    if (!G || !L.cam) return;
+    const r = mini.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+    L.cx = fx * L.wW - L.cw / L.z / 2; L.cy = fy * L.wH - L.ch / L.z / 2; clampCam(); camMoved();
+  };
+  mini.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); try { mini.setPointerCapture(e.pointerId); } catch (_) { /* egal */ } mini.dragging = true; miniJump(e); });
+  mini.addEventListener("pointermove", e => { if (mini.dragging) miniJump(e); });
+  mini.addEventListener("pointerup", () => { mini.dragging = false; });
 
   function revert(ch) { for (let k = ch.length - 1; k >= 0; k--) { const [i, from] = ch[k]; G.st[i] = from; G.anim[i] = { t: now(), k: "clear", from: -1 }; } }
   function undo() {
@@ -978,6 +1182,9 @@
   $("#gBack").onclick = () => { AU.ui(); leaveGame(); };
   window.addEventListener("keydown", e => {
     if (screen !== "game" || !G) return;
+    if (e.key === " " && L.cam) { spaceDown = true; e.preventDefault(); return; }
+    if (L.cam && (e.key === "+" || e.key === "=")) { zoomBy(1.4); return; }
+    if (L.cam && e.key === "-") { zoomBy(1 / 1.4); return; }
     if (e.key === "f" || e.key === "1") setTool(1);
     else if (e.key === "x" || e.key === "2") setTool(0);
     else if (e.key === " ") { e.preventDefault(); setTool(G.tool ? 0 : 1); }
@@ -987,7 +1194,7 @@
   });
 
   function leaveGame() {
-    flush();
+    flush(); coopStop(true);
     if (G && !G.done) saveProg();
     persist(true);
     G = null; stroke = null;
@@ -1059,17 +1266,38 @@
     c.setTransform(d, 0, 0, d, 0, 0);
     c.clearRect(0, 0, L.cw, L.ch);
     const R = G.reveal, rt = R ? t - R.t0 : 0;
+    const WW = L.cam ? L.wW : L.cw, WH = L.cam ? L.wH : L.ch;
+    if (L.cam) c.setTransform(d * L.z, 0, 0, d * L.z, -L.cx * d * L.z, -L.cy * d * L.z);
     // Tablett: Mörtelbett
     if (L.tray) c.drawImage(L.tray, 0, 0, L.cw, L.ch);
-    if (R) { rr(c, 0, 0, L.cw, L.ch, s * 0.42); c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
+    else if (L.cam) { rr(c, 0, 0, WW, WH, s * 0.6); c.fillStyle = mortarPattern(c); c.fill(); }
+    if (R) { rr(c, 0, 0, WW, WH, s * 0.42); c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
     geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4600;
-    const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
+    const S = L.cam ? (L.SS || qSize(s * L.z * d)) : s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
+    // nur sichtbare Felder zeichnen
+    let q0 = 0, q1 = W - 1, r0 = 0, r1 = H - 1;
+    if (L.cam) {
+      const step = s + L.g, vw = L.cw / L.z, vh = L.ch / L.z;
+      q0 = Math.max(0, Math.floor((L.cx - L.xs[0]) / step) - 1); q1 = Math.min(W - 1, Math.ceil((L.cx + vw - L.xs[0]) / step) + 1);
+      r0 = Math.max(0, Math.floor((L.cy - L.ys[0]) / step) - 1); r1 = Math.min(H - 1, Math.ceil((L.cy + vh - L.ys[0]) / step) + 1);
+    }
+    const glow = G.coop && G.coop.glow;
+    // weit herausgezoomt: fertiges Vorschaubild verschieben statt jeden Stein neu zu zeichnen
+    if (L.cam && !R && s * L.z < 18) {
+      if (!G.snap || G.snapDirty || G.snapS !== S) renderSnap(S);
+      c.drawImage(G.snap, 0, 0, L.wW, L.wH);
+      if (glow && glow.size) for (const [i, gl] of glow) { const p = (t - gl.t) / 2600; if (p >= 1) { glow.delete(i); continue; } busy = true; const q = i % W, r = Math.floor(i / W); c.globalAlpha = 0.7 * (1 - p); c.fillStyle = gl.color; c.fillRect(L.xs[q], L.ys[r], s, s); c.globalAlpha = 1; }
+      for (const a of G.anim) if (a) { busy = true; break; }
+      return busy;
+    }
     let LT = null;
+    const tiny = L.cam && s * L.z < 18;                 // weit herausgezoomt: schneller zeichnen
     const put = (img, x, y, sc = 1, alpha = 1, sx = sc) => {
       if (alpha <= 0.002 || sx <= 0.01) return;
       c.globalAlpha = Math.min(1, alpha);
       const w = s * sx * LT.sc, h = s * sc * LT.sc;
+      if (tiny) { blit(c, img, x + (s - w) / 2, y + (s - h) / 2, w, h); c.globalAlpha = 1; return; }
       c.save(); c.translate(x + s / 2, y + s / 2); c.rotate(LT.rot);
       blit(c, img, -w / 2, -h / 2, w, h);
       c.restore();
@@ -1082,8 +1310,8 @@
       c.globalAlpha = Math.min(1, alpha); c.fillStyle = color; c.fill(UNIT[vv]); c.restore();
     };
     const filledLook = i => G.zauber ? sprite("gem", col[i], S, LT.gv) : sprite("marble", "", S, pic.vr[i]);
-    const holeLook = i => sprite(clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? col[i] : "", S, pic.vr[i]);
-    for (let r = 0; r < H; r++) for (let q = 0; q < W; q++) {
+    const holeLook = i => sprite(clues[i] >= 0 ? "hole" : "holeDot", G.zauber && !pic.coop ? col[i] : "", S, pic.vr[i]);
+    for (let r = r0; r <= r1; r++) for (let q = q0; q <= q1; q++) {
       const i = r * W + q, x0 = L.xs[q], y = L.ys[r], vv = pic.vr[i];
       let v = G.st[i], dx = 0, red = 0, ap = -1, ak = "";
       LT = lay(i);
@@ -1123,21 +1351,29 @@
       else if (v === 1) put(filledLook(i), x, y);
       else put(holeLook(i), x, y);
       if (red > 0) over(x, y, vv, "#e0605a", red * 0.4);
+      if (glow && glow.size) { const gl = glow.get(i); if (gl) { const p = (t - gl.t) / 2600; if (p >= 1) glow.delete(i); else { busy = true; over(x, y, vv, gl.color, 0.55 * Math.sin(Math.min(1, p * 3) * Math.PI / 2) * (1 - p)); } } }
       // Zahl
       const k = clues[i];
-      if (k >= 0 && numA > 0) {
+      if (k >= 0 && numA > 0 && !(L.cam && s * L.z < 11)) {
         let kind = v === 1 ? (G.zauber ? (lum(pic.rgbs[i]) > 0.62 ? "gemL" : "gem") : "marble") : v === 0 ? "hole" : "stone";
         let alpha = numA;
         const cs = G.cs[i];
         if (cs === 1) { const p = clamp((t - G.ct[i]) / 600); alpha *= 1 - 0.66 * p; if (p < 1) busy = true; }
         if (cs === 2) kind = "bad";
         c.globalAlpha = alpha;
-        c.save(); c.translate(x + s / 2, y + s / 2); c.rotate(LT.rot); c.drawImage(numSprite(k, kind, S), -s / 2, -s / 2, s, s); c.restore();
+        if (tiny) c.drawImage(numSprite(k, kind, S), x, y, s, s);
+        else { c.save(); c.translate(x + s / 2, y + s / 2); c.rotate(LT.rot); c.drawImage(numSprite(k, kind, S), -s / 2, -s / 2, s, s); c.restore(); }
         c.globalAlpha = 1;
       }
     }
     // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
+    if (L.cam && !R && G.coop) for (const [i, gl] of G.coop.glow) if (t - gl.t < 2600 && gl.name) {
+      // Name der Person, die gerade hier gelegt hat
+      const q = i % W, r = Math.floor(i / W);
+      c.font = "500 " + Math.round(s * 0.42) + "px Lexend, sans-serif"; c.textAlign = "center"; c.textBaseline = "bottom";
+      c.globalAlpha = 0.9 * (1 - (t - gl.t) / 2600); c.fillStyle = gl.color; c.fillText(gl.name, L.xs[q] + s / 2, L.ys[r] - s * 0.15); c.globalAlpha = 1;
+    }
     // Ring füllt sich beim Gedrückthalten: dann wird das Feld leer markiert
     if (!R && stroke && stroke.pending) {
       const p = clamp((t - stroke.t0) / HOLD), q = stroke.start % W, r = Math.floor(stroke.start / W);
@@ -1164,12 +1400,12 @@
     // Lichtstreif über das fertige Bild
     if (R && rt > 1600 && rt < 4400) {
       const p = (rt - 1600) / 2800;
-      const bw = L.cw * 0.35, x = -bw + (L.cw + bw * 2) * ease(p);
+      const bw = WW * 0.35, x = -bw + (WW + bw * 2) * ease(p);
       c.save(); rr(c, L.xs[0], L.ys[0], L.xs[W - 1] + s - L.xs[0], L.ys[H - 1] + s - L.ys[0], s * 0.2); c.clip();
       c.globalCompositeOperation = "lighter";
-      const g = c.createLinearGradient(x - bw, 0, x + bw, L.ch * 0.4);
+      const g = c.createLinearGradient(x - bw, 0, x + bw, WH * 0.4);
       g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.5, "rgba(255,248,230,.14)"); g.addColorStop(1, "rgba(255,255,255,0)");
-      c.fillStyle = g; c.fillRect(0, 0, L.cw, L.ch); c.restore();
+      c.fillStyle = g; c.fillRect(0, 0, WW, WH); c.restore();
     }
     return busy;
   }
@@ -1212,6 +1448,21 @@
     return cv;
   }
 
+  function renderSnap(S) {
+    const pic = G.pic, { W, H, clues, col } = pic, k = Math.min(1, 2600 / L.wW), s = L.s;
+    if (!G.snap) G.snap = document.createElement("canvas");
+    const cv = G.snap; cv.width = Math.round(L.wW * k); cv.height = Math.round(L.wH * k);
+    const c = cv.getContext("2d"); c.setTransform(k, 0, 0, k, 0, 0);
+    rr(c, 0, 0, L.wW, L.wH, s * 0.6); c.fillStyle = mortarPattern(c); c.fill();
+    geom(1);
+    for (let r = 0; r < H; r++) for (let q = 0; q < W; q++) {
+      const i = r * W + q, v = G.st[i], lt = lay(i);
+      const img = v === 1 ? sprite("gem", col[i], S, lt.gv) : v === 0 ? sprite(clues[i] >= 0 ? "hole" : "holeDot", "", S, pic.vr[i]) : sprite("slate", "", S, pic.vr[i]);
+      blit(c, img, L.xs[q], L.ys[r], s, s);
+    }
+    G.snapDirty = false; G.snapS = S;
+  }
+
   function blockFrame(i, color, w) {
     const W = G.pic.W, H = G.pic.H, q = i % W, r = Math.floor(i / W), s = L.s;
     const q0 = Math.max(0, q - 1), q1 = Math.min(W - 1, q + 1), r0 = Math.max(0, r - 1), r1 = Math.min(H - 1, r + 1);
@@ -1241,7 +1492,7 @@
   function glowAt(i, color) {
     if (REDUCE || !G) return;
     const [x, y] = cellCenter(i);
-    parts.push({ k: "glow", x, y, life: 0, max: 0.7, size: L.s * 0.9, color });
+    parts.push({ k: "glow", x, y, life: 0, max: 0.7, size: L.s * (L.cam ? L.z : 1) * 0.9, color });
     kick();
   }
   function motes(pic) {
@@ -1312,11 +1563,117 @@
   }
   setInterval(() => { if (G && !G.done && screen === "game" && !document.hidden) { const t = now(); G.elapsed += (t - G.tick) / 1000; G.tick = t; } }, 1000);
 
+  /* ---------- Gemeinschaftswerk: Abgleich mit dem Webspace ---------- */
+  const NAMECOLS = ["#ffb36a", "#8fd0ff", "#ff8ab8", "#9fe08a", "#d8a8ff", "#ffe066", "#7fe0d0"];
+  const nameColor = n => NAMECOLS[[...String(n)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % NAMECOLS.length];
+  let coopTimer = 0, coopFlushT = 0, coopBusy = false;
+  const coopOnline = () => ACC.online && !!ACC.token;
+  function coopStart() {
+    clearInterval(coopTimer);
+    coopTimer = setInterval(() => {
+      if (!G || !G.coop) return;
+      // Tropfen füllen sich nach
+      const c = G.coop;
+      if (c.drops < 5 && now() - c.dropT > 20000) { c.drops++; c.dropT = now(); if (c.drops > 0) c.wait = 0; hud(); }
+      if (!document.hidden && screen === "game") coopSync();
+    }, 3500);
+    coopSync();
+  }
+  function coopStop(flushNow) {
+    clearInterval(coopTimer); coopTimer = 0; clearTimeout(coopFlushT);
+    if (flushNow && G && G.coop && (G.coop.queue.length || G.coop.auto.length)) coopSync();
+  }
+  function coopFlushSoon() { clearTimeout(coopFlushT); coopFlushT = setTimeout(coopSync, 1200); }
+  function coopWaitToast() {
+    const s = Math.max(1, Math.ceil(((G && G.coop && G.coop.wait) || 0) - now()) / 1000 | 0);
+    toast("Kurze Pause: Das Glas muss abkühlen. Noch <b>" + s + " s</b>, dann geht es weiter.", 3000);
+  }
+  async function coopSync() {
+    if (!G || !G.coop || coopBusy || !coopOnline()) return;
+    const g = G, c = g.coop, cells = c.queue.splice(0, 5000), auto = c.auto.splice(0, 5000);
+    coopBusy = true;
+    const j = await api({ action: "coop", name: ACC.name, token: ACC.token, id: g.pic.id, n: g.N, ver: c.ver, cells, auto });
+    coopBusy = false;
+    if (!j.ok) { c.queue.unshift(...cells); c.auto.unshift(...auto); if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (G !== g) return;
+    c.ver = j.ver; c.active = j.active || []; c.by = j.by || {};
+    if (j.state) coopMerge(j.state, j.recent || []);
+    hud();
+  }
+  // Steine der anderen übernehmen (nur solche, die zum Bild passen)
+  function coopMerge(state, recent) {
+    const pic = G.pic, t = now(), who = new Map();
+    for (const [i, n] of recent) who.set(i, n);
+    let added = 0;
+    for (let i = 0; i < G.N && i < state.length; i++) {
+      const ch = state[i]; if (ch === "?" || G.st[i] >= 0) continue;
+      const v = ch === "1" ? 1 : 0; if (v !== pic.sol[i]) continue;
+      G.st[i] = v; added++;
+      G.anim[i] = { t: t + Math.random() * 400, k: v ? "fill" : "mark", from: -1 };
+      const n = who.get(i);
+      if (n) G.coop.glow.set(i, { t, color: nameColor(n), name: G.coop.glow.size < 40 && v ? n : "" });
+    }
+    if (added) { G.snapDirty = true; clueStates(false); saveProg(); drawMini(true); kick(); checkWin(); }
+  }
+  function coopWin() {
+    const pic = G.pic, c = G.coop;
+    coopSync();
+    const W = pic.W, d = new Float32Array(G.N);
+    const li = G.lastI >= 0 ? G.lastI : Math.floor(G.N / 2), lr = Math.floor(li / W), lq = li % W;
+    for (let i = 0; i < G.N; i++) d[i] = Math.hypot(Math.floor(i / W) - lr, (i % W) - lq) * 22 + Math.random() * 80;
+    L.z = L.zMin; clampCam(); L.SS = 0; wantSprites(); drawMini(true);
+    G.reveal = { t0: now() + 400, d };
+    save.coopDone[pic.id] = { date: new Date().toISOString().slice(0, 10), by: Object.assign({}, c.by) };
+    if (!coopOnline()) { let k = 0; for (const ch of (save.coop[pic.id] || {}).st || "") if (ch !== "?") k++; save.coopDone[pic.id].by = { [ACC.name || "Du"]: pic.N }; }
+    persist(true);
+    const glow = $("#glow");
+    glow.style.background = "radial-gradient(60% 50% at 50% 45%, " + pic.avg + ", transparent 70%)";
+    setTimeout(() => { glow.style.opacity = 0.45; }, 600);
+    setTimeout(() => AU.reveal(3.2), 400);
+    G.result = { coop: true };
+    setTimeout(() => { if (G && G.pic === pic) { if (coopOnline()) coopSync().then(() => { if (G && G.pic === pic) { save.coopDone[pic.id].by = Object.assign({}, G.coop.by); persist(); showCard(true); } }); else showCard(true); } }, 4600);
+    kick();
+  }
+  function camFitAboveCard() {
+    const card = $("#win .card"); if (!card) return;
+    const wr = $("#boardWrap").getBoundingClientRect(), cr = card.getBoundingClientRect();
+    const side = cr.left > wr.left + wr.width * 0.5;
+    const aw = side ? cr.left - wr.left - 16 : wr.width, ah = side ? wr.height : cr.top - wr.top - 12;
+    L.z = Math.min(aw / L.wW, ah / L.wH) * 0.98;
+    L.cx = L.wW / 2 - (aw / 2) / L.z; L.cy = L.wH / 2 - (ah / 2) / L.z;
+    $("#mini").hidden = $("#zoomBox").hidden = true;
+    L.SS = 0; wantSprites(); kick();
+  }
+  function coopCardHtml(pic) {
+    const by = Object.entries((save.coopDone[pic.id] || {}).by || {}).sort((a, b) => b[1] - a[1]);
+    const nxt = COOP.list[pic.pi + 1];
+    return `<div class="card">
+      <div class="kick">Gemeinschaftswerk ${pic.pi + 1} · vollendet</div>
+      <h3>${pic.title}</h3>
+      <p class="verse">${pic.verse}</p>
+      ${by.length ? `<div class="lbh" style="margin-top:14px">Gelegt von</div><ol class="lb credits" style="max-width:380px;margin:0 auto 16px">${by.map(([n, k], j) => `<li class="${n === ACC.name ? "me" : ""}"><span class="lbr">${j + 1}.</span><span class="lbn">${esc(n)}</span><span class="lbs"></span><span class="lbt">${k} Steine</span></li>`).join("")}</ol>` : ""}
+      ${nxt ? `<div class="rankup">Das nächste Gemeinschaftswerk ist jetzt offen.</div>` : ""}
+      <div class="row">
+        <button class="pill" id="wLook">Bild ansehen</button>
+        <button class="pill" id="wHome">Übersicht</button>
+        ${nxt ? '<button class="pill primary" id="wNext">Nächstes Werk</button>' : ""}
+      </div></div>`;
+  }
+  function openCoopHelp() {
+    const el = openSheet(`<h2>Gemeinsam legen</h2>
+      <p>Dieses Mosaik ist riesig: ${G ? G.pic.W + "×" + G.pic.H : "72×48"} Felder. Alle aus der Familie legen am <b>selben Bild</b>, jederzeit und gleichzeitig. Was andere legen, erscheint nach ein paar Sekunden auch bei dir, kurz leuchtend mit ihrem Namen.</p>
+      <p>Es bleiben nur Steine liegen, die stimmen. Darum kann niemand etwas kaputt machen. Ein Fehler kostet einen <b>Tropfen</b>; alle 20 Sekunden kommt einer zurück.</p>
+      <p><b>Zwei Finger</b> schieben und zoomen, <b>ein Finger</b> legt Steine. Die kleine <b>Karte</b> zeigt das ganze Bild – tippe darauf, um hinzuspringen. Am Computer: Mausrad schiebt, Strg + Mausrad zoomt.</p>
+      <div class="acts"><button class="pill primary" id="chClose">Los geht's</button></div>`);
+    $("#chClose").onclick = () => { AU.ui(); closeSheet(); };
+  }
+
   /* ---------- Gewonnen ---------- */
   function win() {
     const pic = G.pic, t = now();
     G.done = true; G.hint = null; stroke = null; 
-    for (let i = 0; i < G.N; i++) if (G.st[i] < 0) G.st[i] = pic.sol[i];
+    for (let i = 0; i < G.N; i++) if (G.st[i] < 0) { G.st[i] = pic.sol[i]; if (G.coop) G.coop.auto.push([i, pic.sol[i]]); }
+    if (G.coop) return coopWin();
     const W = pic.W, li = G.lastI >= 0 ? G.lastI : 0, lr = Math.floor(li / W), lq = li % W;
     const d = new Float32Array(G.N);
     for (let i = 0; i < G.N; i++) d[i] = Math.hypot(Math.floor(i / W) - lr, (i % W) - lq) * 42 + Math.random() * 60;
@@ -1404,10 +1761,20 @@
 
   function showCard(on) {
     const box = $("#win");
-    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); return; }
+    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); if (L.cam) { $("#mini").hidden = $("#zoomBox").hidden = false; L.z = L.zMin; clampCam(); camMoved(); } return; }
     if (!G || !G.result) return;
+    if (G.result.coop) {
+      const pic = G.pic, nxt = COOP.list[pic.pi + 1];
+      box.innerHTML = coopCardHtml(pic); box.hidden = false;
+      $("#game").classList.add("won");
+      requestAnimationFrame(() => fitBoard(true)); setTimeout(() => { if (!$("#win").hidden) fitBoard(true); }, 950);
+      $("#wLook").onclick = () => { AU.ui(); showCard(false); };
+      $("#wHome").onclick = () => { AU.ui(); leaveGame(); };
+      if (nxt) $("#wNext").onclick = () => { AU.ui(); startGame(nxt); };
+      return;
+    }
     const pic = G.pic, { rec, rankUp, newWorld } = G.result;
-    const allDone = PICS.every(p => save.solved[p.id]);
+    const allDone = REG.every(p => save.solved[p.id]);
     const nxt = pic.w.special ? (pic.w.list.find(q => !save.solved[q.id]) || nextPic(null)) : nextPic(null);
     let extra = "";
     if (rankUp) extra += `<div class="rankup">Neuer Rang: <b>${rankUp}</b></div>`;
@@ -1443,6 +1810,7 @@
 
   // Fertiges Bild über die Karte schieben, damit nichts verdeckt wird.
   function fitBoard(on) {
+    if (L.cam) { if (on) camFitAboveCard(); return; }
     const sh = $("#boardShadow");
     board.style.transition = sh.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
     if (!on) { board.style.transform = sh.style.transform = ""; return; }
@@ -1472,7 +1840,7 @@
       sec.innerHTML = `<h3>${w.name}</h3><div class="ggrid"></div>`;
       const grid = sec.querySelector(".ggrid");
       w.list.forEach(p => {
-        const rec = save.solved[p.id];
+        const rec = p.coop ? save.coopDone[p.id] : save.solved[p.id];
         const f = document.createElement("button");
         f.className = "frame" + (rec ? "" : " empty");
         if (rec) {
@@ -1519,7 +1887,7 @@
   }
   function renderScores(loading) {
     const tabs = $("#scTabs"), body = $("#scBody");
-    tabs.innerHTML = [["gesamt", "Gesamt"]].concat(WORLDS.map(w => [w.id, w.name])).map(([id, n]) => `<button data-t="${id}" class="${id === scoreTab ? "on" : ""}">${n}</button>`).join("");
+    tabs.innerHTML = [["gesamt", "Gesamt"]].concat(WORLDS.filter(w => !w.coop).map(w => [w.id, w.name])).map(([id, n]) => `<button data-t="${id}" class="${id === scoreTab ? "on" : ""}">${n}</button>`).join("");
     tabs.querySelectorAll("button").forEach(b => b.onclick = () => { AU.ui(); scoreTab = b.dataset.t; renderScores(false); });
     const list = players();
     const solo = !(family && family.length);
@@ -1623,6 +1991,16 @@
   $("#btnAccount").onclick = () => { AU.init(); AU.ui(); openAccount(); };
 
   function openView(p) {
+    if (p.coop) {
+      const rec = save.coopDone[p.id] || {};
+      const names = Object.entries(rec.by || {}).sort((a, b) => b[1] - a[1]);
+      const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
+        ${names.length ? `<ol class="lb credits">${names.map(([n, k], j) => `<li class="${n === ACC.name ? "me" : ""}"><span class="lbr">${j + 1}.</span><span class="lbn">${esc(n)}</span><span class="lbs"></span><span class="lbt">${k}</span></li>`).join("")}</ol>` : ""}
+        <div class="acts" style="justify-content:center"><button class="pill primary" id="vClose">Schließen</button></div></div>`);
+      drawMosaic(el.querySelector("canvas"), p, 440);
+      $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
+      return;
+    }
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
       <p style="color:#fff">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
@@ -1722,10 +2100,10 @@
   probeServer().then(on => {
     accountPill();
     if (!on) return;
-    if (ACC.token) pullServer();
+    if (ACC.token) { pullServer(); refreshCoopList(); }
     else openAccount();
   });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
   try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
-  window.__mosaik = { numFont(f, w, z) { NUM.family = f; NUM.weight = w; NUM.size = z || 0.6; numCache.clear(); kick(); }, PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
+  window.__mosaik = { coopPlace(i, v) { if (!G) return; const sk = { val: v == null ? G.pic.sol[i] : v, ch: [], dead: false }; applyAt(i, sk); afterChange(); }, numFont(f, w, z) { NUM.family = f; NUM.weight = w; NUM.size = z || 0.6; numCache.clear(); kick(); }, PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
 })();
