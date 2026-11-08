@@ -137,6 +137,11 @@
     clueDone(n) {
       for (let i = 0; i < Math.min(n, 3); i++) this.bell(this.note(7 + i * 2, 1), 0.16, 0.05 + i * 0.07);
     },
+    broken() {
+      const c = this.ctx; if (!c) return;
+      [-12, -9, -5].forEach((d, i) => this.pluck(this.root + d - 12, 0.3, i * 0.12, "sfx", 2.4));
+      this.bell(this.root - 5, 0.08, 0.5);
+    },
     hint() { [0, 2, 4].forEach((d, i) => this.bell(this.note(d + 5, 1), 0.12, i * 0.08)); },
     ui() { this.tick(0.12); },
     star(i) { this.bell(this.note(4 + i * 2, 1), 0.3); this.pluck(this.note(4 + i * 2, 0), 0.25); },

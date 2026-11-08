@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#0f0d17">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gloock&family=Lexend:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poiret+One&family=Lexend:wght@300;400;500;600&display=swap">
 <style>/*CSS*/</style>
 <!--BODY-->
 <div id="bg"><div id="glow"></div><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><div class="grain"></div></div>
@@ -39,10 +39,10 @@
   <header class="gbar">
     <button class="ib" id="gBack" aria-label="Zurück zur Übersicht"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
     <div class="gtitle"><div class="gworld" id="gWorld"></div><div class="griddle" id="gRiddle"></div></div>
-    <div class="gstat"><div class="stars" id="gStars"></div><div class="gprog"><i id="gProg"></i></div></div>
+    <div class="gstat"><div class="stars" id="gStars"></div><div class="lives" id="gLives" role="img"></div><div class="gprog"><i id="gProg"></i></div></div>
   </header>
   <div class="gmain">
-    <div id="boardWrap"><canvas id="board"></canvas></div>
+    <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas></div>
     <div class="toolsWrap">
       <div class="toast" id="toast"></div>
       <footer class="tools">
