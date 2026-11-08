@@ -891,10 +891,17 @@
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0) return;
-    // Erst abwarten: kurz tippen = Werkzeug, gedrückt halten = leer markieren, ziehen = malen
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true };
     G.press = i;
     clearTimeout(holdTimer);
+    // Maus und Stift: linke Taste = Werkzeug, rechte Taste = leer. Sofort anwenden.
+    if (e.pointerType !== "touch") {
+      const val = e.button === 2 ? 0 : G.tool;
+      stroke = { id: e.pointerId, val, action: !G.zauber && G.st[i] === val ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: false, axis: null };
+      applyAt(i, stroke); afterChange();
+      return;
+    }
+    // Finger: kurz tippen = Werkzeug, gedrückt halten = leer markieren, ziehen = malen
+    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true, axis: null };
     holdTimer = setTimeout(() => holdEmpty(stroke), HOLD);
     kick();
   });
@@ -906,6 +913,8 @@
   }
   function holdEmpty(sk) {
     if (!G || G.done || G.over || !sk || sk !== stroke || !sk.pending || sk.last !== sk.start) return;
+    // Halten auf einem schon gelegten Stein ändert nichts (dann wird normal weitergemalt)
+    if (G.zauber && G.st[sk.start] >= 0) return;
     sk.pending = false;
     sk.val = 0; sk.action = !G.zauber && G.st[sk.start] === 0 ? "clear" : "set";
     applyAt(sk.start, sk);
@@ -913,8 +922,17 @@
   }
   board.addEventListener("pointermove", e => {
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
-    const i = cellAt(e.clientX, e.clientY);
+    let i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
+    // Ziehen rastet auf die erste Richtung ein: Reihe oder Spalte
+    const Wd = G.pic.W, sr = Math.floor(stroke.start / Wd), sc = stroke.start % Wd;
+    if (!stroke.axis) {
+      const dr = Math.abs(Math.floor(i / Wd) - sr), dc = Math.abs((i % Wd) - sc);
+      if (dr === dc && dr === 1) return; // erst entscheiden, wenn die Richtung klar ist
+      stroke.axis = dc >= dr ? "row" : "col";
+    }
+    i = stroke.axis === "row" ? sr * Wd + (i % Wd) : Math.floor(i / Wd) * Wd + sc;
+    if (i === stroke.last) return;
     if (stroke.pending) { commitStart(stroke); if (!stroke || stroke.dead) return; }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
@@ -1547,7 +1565,7 @@
     const el = openSheet(`<h2>So geht Mosaik</h2>
       <canvas class="demo" width="460" height="460"></canvas>
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
-      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>. <b>Gedrückt halten</b> markiert ein Feld immer als leer, egal welches Werkzeug gewählt ist – hältst du und ziehst dann weiter, wird die ganze Strecke leer.</p>
+      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>. <b>Gedrückt halten</b> markiert ein Feld immer als leer, egal welches Werkzeug gewählt ist – hältst du und ziehst dann weiter, wird die ganze Strecke leer. Am Computer: linke Maustaste für das Werkzeug, <b>rechte Maustaste</b> für leer.</p>
       <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
       <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
