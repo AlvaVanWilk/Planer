@@ -758,7 +758,6 @@
     saveProg();
     kick();
     if (G.actions === 3) coach("zero");
-    if (G.actions === 24) coach("press");
     checkWin();
   }
 
@@ -794,7 +793,7 @@
 
   /* ---------- Eingabe ---------- */
   const ptrs = new Map();
-  let stroke = null, lpTimer = 0, twoTap = null;
+  let stroke = null, twoTap = null;
 
   board.addEventListener("pointerdown", e => {
     AU.init();
@@ -804,7 +803,7 @@
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
     if (ptrs.size === 2) {
-      clearTimeout(lpTimer);
+      
       if (stroke && now() - stroke.t0 < 350 && !G.zauber) {
         revert(stroke.ch); stroke = null; twoTap = { t: now() }; afterChange();
       }
@@ -814,19 +813,15 @@
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0) return;
-    const onClue = G.pic.clues[i] >= 0;
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: onClue };
+    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false };
     G.press = i;
-    // Auf einer Zahl abwarten: langes Drücken soll nur vervollständigen, nie das Werkzeug anwenden
-    if (onClue) { lpTimer = setTimeout(() => longPress(i), 430); kick(); }
-    else { applyAt(i, stroke); afterChange(); }
+    applyAt(i, stroke);
+    afterChange();
   });
   board.addEventListener("pointermove", e => {
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
-    clearTimeout(lpTimer);
-    if (stroke.pending) { stroke.pending = false; applyAt(stroke.start, stroke); if (stroke.dead) { afterChange(); return; } }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
     const r1 = Math.floor(i / W), c1 = i % W;
@@ -842,8 +837,6 @@
     ptrs.delete(e.pointerId);
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
-      clearTimeout(lpTimer);
-      if (stroke.pending && G && !G.done && !G.over) { stroke.pending = false; applyAt(stroke.start, stroke); afterChange(); }
       if (stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
       stroke = null;
       if (G) { G.press = -1; hud(); kick(); }
@@ -852,24 +845,6 @@
   board.addEventListener("pointerup", up);
   board.addEventListener("pointercancel", up);
   board.addEventListener("contextmenu", e => e.preventDefault());
-
-  function longPress(i) {
-    if (!G || G.done || G.over || !stroke || stroke.start !== i || stroke.last !== i || !stroke.pending) return;
-    stroke.pending = false; // das Werkzeug wird für diesen Druck nicht mehr angewendet
-    const r = SV.singleStep(G.B, G.pic.clues, G.st, i);
-    if (!r || r.bad) { AU.tick(0.18); toast("Diese Zahl verrät gerade noch nichts Sicheres."); kick(); return; }
-    let k = 0;
-    for (const [x, v] of r) {
-      if (G.zauber && G.pic.sol[x] !== v) continue;
-      if (setCell(x, v, stroke, 45 * k)) {
-        const d = 45 * k;
-        if (v === 1) setTimeout(() => { AU.hit(); if (G) glowAt(x, G.pic.col[x]); }, d);
-        else setTimeout(() => AU.empty(), d);
-        k++;
-      }
-    }
-    afterChange();
-  }
 
   function revert(ch) { for (let k = ch.length - 1; k >= 0; k--) { const [i, from] = ch[k]; G.st[i] = from; G.anim[i] = { t: now(), k: "clear", from: -1 }; } }
   function undo() {
@@ -949,7 +924,6 @@
     const msgs = {
       start: "Jede Zahl zählt die Bildfelder in ihrem <b>3×3-Block</b>. Sie selbst zählt mit.",
       zero: "Fang bei <b>0</b> und <b>9</b> an: Bei 0 bleibt der Block leer, bei 9 gehört alles zum Bild. Am Rand sind es weniger Felder.",
-      press: "Halte eine Zahl <b>gedrückt</b>: Steht ihr Block schon fest, legt Mosaik ihn für dich.",
     };
     setTimeout(() => toast(msgs[step], 6500), step === "start" ? 700 : 0);
   }
@@ -1047,16 +1021,6 @@
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
-    // Ring füllt sich, solange eine Zahl gehalten wird
-    if (!R && stroke && stroke.pending) {
-      const p = clamp((t - stroke.t0) / 430), q = stroke.start % W, r = Math.floor(stroke.start / W);
-      if (p > 0.15) {
-        c.beginPath(); c.arc(L.xs[q] + s / 2, L.ys[r] + s / 2, s * 0.62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ease((p - 0.15) / 0.85));
-        c.lineWidth = Math.max(2, s * 0.06); c.lineCap = "round"; c.strokeStyle = "rgba(10,8,20,.55)"; c.stroke();
-        c.lineWidth = Math.max(1.2, s * 0.035); c.strokeStyle = "rgba(235,238,255,.95)"; c.stroke();
-      }
-      busy = true;
-    }
     // Tipp
     if (G.hint && !R) {
       busy = true;
@@ -1221,7 +1185,7 @@
   /* ---------- Gewonnen ---------- */
   function win() {
     const pic = G.pic, t = now();
-    G.done = true; G.hint = null; stroke = null; clearTimeout(lpTimer);
+    G.done = true; G.hint = null; stroke = null; 
     for (let i = 0; i < G.N; i++) if (G.st[i] < 0) G.st[i] = pic.sol[i];
     const W = pic.W, li = G.lastI >= 0 ? G.lastI : 0, lr = Math.floor(li / W), lq = li % W;
     const d = new Float32Array(G.N);
@@ -1251,7 +1215,7 @@
     if (!G || !G.over) return;
     const pic = G.pic;
     delete save.prog[pic.id]; persist(true);
-    clearTimeout(lpTimer); stroke = null; G.hint = null;
+     stroke = null; G.hint = null;
     $("#game").classList.add("broken", "won");
     AU.broken();
     const box = $("#win");
@@ -1382,7 +1346,7 @@
       <canvas class="demo" width="460" height="460"></canvas>
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
       <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>.</p>
-      <p><b>Gedrückt halten</b> auf einer Zahl legt ihren Block automatisch, sobald er feststeht. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
+      <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
       <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
     demo(el.querySelector("canvas"));
