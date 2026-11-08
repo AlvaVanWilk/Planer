@@ -17,6 +17,7 @@
   const SUB = 6;          // Teilschritte pro Bild
   const DAMP = 0.985;
   const SPEED = 7;        // Höchsttempo eines gezogenen Endes (Einheiten/s)
+  const MAXLEN = 4.0;     // weiter lässt sich keine Kordel ausziehen (Rastereinheiten)
   const D2 = 2 * RAD;
   const FRICTION = 0.35;  // Haftung zwischen Kordeln
   const PEG_R = 0.12 + RAD, PEG_H = 1.6 * RAD;
@@ -173,14 +174,27 @@
         // erst ganz anheben, dann führen – und erst über der Öse wieder absenken
         if (dh > 0.02 && x[j + 2] < LIFT - 0.02) { x[j + 2] = Math.min(LIFT, x[j + 2] + m * 1.5); continue; }
         if (dh > 1e-6) {
-          if (dh <= m) { x[j] = T.x; x[j + 1] = T.y; }
-          else { x[j] += (dx / dh) * m; x[j + 1] += (dy / dh) * m; }
+          let nx = dh <= m ? T.x : x[j] + (dx / dh) * m, ny = dh <= m ? T.y : x[j + 1] + (dy / dh) * m;
+          // Eine Kordel ist nicht endlos dehnbar: ist sie straff, bleibt das gezogene Ende stehen
+          if (w.drag && w.drag.r === r && w.drag.e === e) {
+            const k = e ? j - 3 : j + 3;
+            const away = Math.hypot(nx - x[k], ny - x[k + 1]) > Math.hypot(x[j] - x[k], x[j + 1] - x[k + 1]);
+            R.taut = flatLen(x) > MAXLEN;
+            if (R.taut && away) continue;
+          }
+          x[j] = nx; x[j + 1] = ny;
           continue;
         }
         const dz = T.z - x[j + 2];
         x[j + 2] += Math.abs(dz) <= m * 1.5 ? dz : Math.sign(dz) * m * 1.5;
       }
     });
+  }
+  // Länge der Kordel in der Draufsicht
+  function flatLen(x) {
+    let L = 0;
+    for (let i = 0; i < N - 1; i++) L += Math.hypot(x[i * 3 + 3] - x[i * 3], x[i * 3 + 4] - x[i * 3 + 1]);
+    return L;
   }
   function substep(w, h) {
     const g = G * h * h;
@@ -275,7 +289,7 @@
     w.drag = null;
   }
 
-  const API = { RAD, LIFT, N, createWorld, step, motion, crossings, snapshot, restore, pack, unpack };
+  const API = { RAD, LIFT, N, MAXLEN, flatLen, createWorld, step, motion, crossings, snapshot, restore, pack, unpack };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   else root.Rope = API;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -78,7 +78,12 @@ function generate(level, seedBump = 0) {
   const hist = [];
   const freeHoles = () => { const occ = new Set(); w.ropes.forEach((R) => { occ.add(R.e[0]); occ.add(R.e[1]); }); return range(cells).filter((h) => !occ.has(h)); };
   const endPos = (r, e) => P[w.ropes[r].e[e]];
-  const doMove = (m) => { move(w, m.r, m.e, m.h, m.via); hist.push(m); };
+  // Zug ausführen; kommt das Ende wegen straffer Kordel nicht an, wird er zurückgenommen
+  const doMove = (m) => {
+    const snap = Rope.snapshot(w);
+    if (move(w, m.r, m.e, m.h, m.via)) { hist.push(m); return true; }
+    Rope.restore(w, snap); return false;
+  };
   const tangledSet = (cr) => { const t = new Set(); cr.forEach((x) => { t.add(x.a); t.add(x.b); }); return t; };
   // Einhaken: A liegt unter B → A's Ende spitz um B's nächste Öse herum zurückführen
   function tryHook(cands) {
@@ -97,8 +102,7 @@ function generate(level, seedBump = 0) {
       }
       if (best == null) continue;
       const turns = rng() < 0.3 ? 1.5 : 0.75;
-      doMove({ r: A, e: eA, h: best, from: w.ropes[A].e[eA], via: arcAround(Q, S0, P[best], turns, rng() < 0.5 ? 1 : -1, cols, rows), kind: "hook" });
-      return true;
+      if (doMove({ r: A, e: eA, h: best, from: w.ropes[A].e[eA], via: arcAround(Q, S0, P[best], turns, rng() < 0.5 ? 1 : -1, cols, rows), kind: "hook" })) return true;
     }
     return false;
   }
@@ -136,7 +140,9 @@ function generate(level, seedBump = 0) {
   let solvedBack = true;
   for (const speed of [2.5, 9]) {
     Rope.restore(w, start);
-    for (let i = hist.length - 1; i >= 0; i--) { const m = hist[i]; move(w, m.r, m.e, m.from, m.via.slice().reverse(), { speed }); }
+    let ok = true;
+    for (let i = hist.length - 1; i >= 0 && ok; i--) { const m = hist[i]; ok = move(w, m.r, m.e, m.from, m.via.slice().reverse(), { speed }); }
+    if (!ok) { solvedBack = false; break; }
     settle(w, 150);
     if (crossCount(w) !== 0) { solvedBack = false; break; }
   }

@@ -150,6 +150,7 @@ const Sound = {
   noteFor(len) { return this.SCALE[clamp(Math.round(((4.2 - len) / 3.4) * (this.SCALE.length - 1)), 0, this.SCALE.length - 1)]; },
   pluck(len, t, vol) { this.tone(this.noteFor(len) * 2, { t: t || 0, dur: 2.2, vol: vol || 0.11, bright: 3800, bell: true, att: 0.003 }); },
   pick() { this.tone(220, { dur: 0.2, vol: 0.05, bright: 1100, rev: 0.25 }); },
+  snag() { const t = now(); if (t - this.last < 400) return; this.last = t; this.tone(123.47, { dur: 0.5, vol: 0.06, bright: 500, rev: 0.25 }); },
   seat() { this.tone(392, { dur: 0.25, vol: 0.05, bright: 1600, rev: 0.3 }); this.tone(196, { dur: 0.3, vol: 0.04, bright: 700, rev: 0.2 }); },
   back() { this.tone(196, { dur: 0.3, vol: 0.035, bright: 800, rev: 0.2 }); },
   snag() { const t = now(); if (t - this.last < 160) return; this.last = t; this.tone(123.47, { dur: 0.5, vol: 0.05, bright: 500, rev: 0.25 }); },
@@ -496,10 +497,8 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (!drag || drag.pid !== e.pointerId) return;
   drag.x = e.clientX; drag.y = e.clientY;
-  const g = fingerGrid(), prev = drag.target;
+  const g = fingerGrid();
   state.world.drag.x = clamp(g.x, -0.8, state.def.cols - 0.2); state.world.drag.y = clamp(g.y, -0.8, state.def.rows - 0.2);
-  drag.target = freeHoleNear(g.x, g.y, drag.from);
-  if (drag.target !== prev && drag.target >= 0 && drag.target !== drag.from) haptic(3);
   wakePhysics();
 });
 function endPointer(e) {
@@ -693,6 +692,14 @@ function update(t, dt) {
     if (k >= 1) cam.tw = null; busy = true;
   }
   // Physik, solange sich etwas bewegt
+  // Beim Ziehen: Zielöse dort, wo das Ende wirklich ist – eine straffe Kordel hält es zurück
+  if (drag) {
+    const en = endGrid(drag.r, drag.e), prev = drag.target, R = state.world.ropes[drag.r];
+    drag.target = freeHoleNear(en.x, en.y, drag.from);
+    if (drag.target !== prev && drag.target >= 0 && drag.target !== drag.from) haptic(3);
+    if (R.taut && !drag.taut) { Sound.snag(); haptic(14); flashPill("Die Kordel ist straff", 1400); }
+    drag.taut = !!R.taut;
+  }
   // Physik läuft beim Ziehen und danach, bis alles ruht – spätestens 3 s nach dem letzten Griff schläft sie ein
   if (state.world && (drag || (t < state.activeUntil && t - state.lastTouch < 3000))) {
     // feste Zeitschritte wie bei der Level-Erzeugung – gleiches Verhalten auf jedem Gerät
@@ -830,6 +837,22 @@ function drawRope(r, pts, t, base, lostK, w, shadow) {
     drawPeg(p.x, p.y, L, s * lift * (L.alpha < 1 ? eBack(L.alpha) : 1), a, goldK);
   }
 }
+// kurzes Stück einer Kordel (für Überkreuzungen) – mit leichtem Schatten auf die darunterliegende
+function drawRopePart(r, pts, t, base, lostK, w) {
+  const L = state.look[r], s = cam.s, a = base * L.alpha * (1 - lostK * 0.4);
+  if (a <= 0 || pts.length < 2) return;
+  const goldK = w && w.done[r] ? eOut(clamp((t - w.t0 - w.delay[r]) / 500, 0, 1)) : 0;
+  const col = mix(mix(L.col, ASH, lostK * 0.55), GOLD_HI, goldK * 0.25), rw = RW * s;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.globalAlpha = a * 0.35; tracePts(pts, 0.8 * s, 2 * s); ctx.lineWidth = rw + 3; ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.globalAlpha = a; tracePts(pts);
+  ctx.lineWidth = rw + 1.8; ctx.strokeStyle = rgba(L.dark, 1); ctx.stroke();
+  ctx.lineWidth = rw; ctx.strokeStyle = rgba(col, 1); ctx.stroke();
+  ctx.setLineDash([rw * 0.55, rw * 0.75]);
+  ctx.globalAlpha = a * 0.22; ctx.lineWidth = rw * 0.62; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = a * 0.5; tracePts(pts, -rw * 0.16, -rw * 0.2); ctx.lineWidth = rw * 0.22; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
+}
 function glowRope(pts, alpha) {
   if (alpha <= 0) return;
   ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = alpha;
@@ -886,27 +909,18 @@ function draw(t) {
   order.forEach((r, i) => (idx[r] = i));
   for (let r = 0; r < d.r; r++) P[r] = ropePts(r);
   for (const r of order) drawRope(r, P[r], t, base, lostK, w, true);
-  const crossR = RW * 2.2 * s;
-  for (const c of state.cross) {
-    const bottom = c.top === c.a ? c.b : c.a;
-    if (idx[c.top] > idx[bottom]) continue;
-    const X = g2s(c);
+  // Überkreuzungen: nur das kurze Stück der oberen Kordel nachzeichnen, von unten nach oben
+  const crossR = RW * 2.4 * s;
+  const zAt = (r, f) => { const x = world.ropes[r].x, i = Math.min(N - 2, Math.floor(f)), u = f - i; return x[i * 3 + 2] * (1 - u) + x[i * 3 + 5] * u; };
+  const fixes = state.cross.map((c) => ({ c, top: c.top, f: c.top === c.a ? c.ia : c.ib, z: zAt(c.top, c.top === c.a ? c.ia : c.ib) })).sort((p, q) => p.z - q.z);
+  for (const fx of fixes) {
+    const X = g2s(fx.c), i0 = Math.max(0, Math.floor(fx.f) - 2), i1 = Math.min(N - 1, Math.floor(fx.f) + 3);
     ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
-    drawRope(c.top, P[c.top], t, base, lostK, w, false);
+    drawRopePart(fx.top, P[fx.top].slice(i0, i1 + 1), t, base, lostK, w);
     ctx.restore();
   }
-  /* --- Kreuzungen markieren --- */
-  if (!w && !drag) {
-    const pulse = 0.8 + 0.2 * Math.sin(t * 0.005), fade = 1 - lostK * 0.5;
-    for (const c of state.cross) {
-      const X = g2s(c);
-      glowAt(sprites.coral, X.x, X.y, RW * 2.2 * s, base * 0.35 * pulse * fade);
-      ctx.globalAlpha = base * 0.85 * fade;
-      ctx.beginPath(); ctx.arc(X.x, X.y, RW * 0.21 * s * (0.9 + 0.2 * pulse), 0, TAU);
-      ctx.fillStyle = "#e8896a"; ctx.fill();
-      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(40,14,8,0.7)"; ctx.stroke();
-    }
-  }
+  /* --- straffe Kordel beim Ziehen --- */
+  if (drag && drag.taut) glowRope(P[drag.r], base * (0.18 + 0.08 * Math.sin(t * 0.02)));
   /* --- Tipp --- */
   if (state.hint) {
     const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp(((hn.h != null ? 5000 : 3200) - el2) / 400, 0, 1);

@@ -20,8 +20,12 @@ function move(w, r, e, h, via = [], opts = {}) {
     cur = pt;
   }
   for (let i = 0; i < 6; i++) Rope.step(w, DT);
-  R.e[e] = h; w.drag = null;
+  // erreicht? (eine straffe Kordel hält das Ende zurück)
+  const j = e ? (Rope.N - 1) * 3 : 0, reached = Math.hypot(R.x[j] - to.x, R.x[j + 1] - to.y) < 0.45;
+  if (reached) R.e[e] = h;
+  w.drag = null;
   settle(w, opts.settle || 100);
+  return reached;
 }
 function settle(w, maxSteps) {
   for (let i = 0; i < maxSteps; i++) {
