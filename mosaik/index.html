@@ -1613,7 +1613,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   }
 
   function sprite(style, color, S, v = 0) {
-    S = Math.max(4, Math.round(S)); v = v % NV;
+    S = Math.max(4, Math.round(S)); v = (style === "glass" || style === "gem") ? v % (SNV * 3) : v % NV;
     const key = style + "|" + color + "|" + S + "|" + v;
     let cv = cache.get(key);
     if (cv) return cv;
@@ -1695,7 +1695,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       return;
     }
 
-    if (style === "glass" || style === "gem") { paintGlass(c, S, P, parseCol(color), v, style === "glass"); return; }
+    if (style === "glass" || style === "gem") { paintSmalti(c, S, P, parseCol(color), v % SNV, Math.floor(v / SNV) % 3); return; }
     let base;
     if (style === "slate") { const d = (R() - 0.5) * 12; base = [66 + d, 62 + d, 76 + d * 1.2]; }
     else if (style === "marble") base = [234, 226, 210];
@@ -1747,80 +1747,107 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     }
   }
 
-  // Edelstein-Schliff: leuchtende Tafel, zwölf Facetten, Schliffkanten, Feuer, farbiger Schein
-  function paintGlass(c, S, P, base, v, stars = true) {
-    const X = f => P + S * f, R = srng(v * 131 + Math.round(base[0] * 3 + base[1] * 5 + base[2] * 7));
-    // farbiger Lichtschein auf dem Mörtel und kurzer Kontaktschatten
+  /* Handgeschnittene Smalten: unregelmäßige Form (teils abgeschlagene Ecke), muschelige Bruchfläche,
+     Farbwolken, Tiefe zum Rand, Licht- und Schattenkanten je nach Ausrichtung der Bruchkante. */
+  const SNV = 8, SPOLY = [];
+  for (let k = 0; k < SNV; k++) {
+    const R = srng(k * 4441 + 7), j = 0.065;
+    const pts = [[R() * j, R() * j], [1 - R() * j, R() * j], [1 - R() * j, 1 - R() * j], [R() * j, 1 - R() * j]];
+    if (k % 3 === 1) {
+      const ci = Math.floor(R() * 4), a = pts[ci], nx = pts[(ci + 1) % 4], pv = pts[(ci + 3) % 4], cut = 0.13 + R() * 0.08;
+      pts.splice(ci, 1, [a[0] + (pv[0] - a[0]) * cut, a[1] + (pv[1] - a[1]) * cut], [a[0] + (nx[0] - a[0]) * cut, a[1] + (nx[1] - a[1]) * cut]);
+    }
+    SPOLY.push(pts);
+  }
+  const smaltiPts = (k, x, y, S, ins = 0) => SPOLY[k % SNV].map(([u, w]) => [x + ins + u * (S - 2 * ins), y + ins + w * (S - 2 * ins)]);
+  function polyPath(c, pts, r) {
+    const m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], n = pts.length, s0 = m(pts[n - 1], pts[0]);
+    c.beginPath(); c.moveTo(s0[0], s0[1]);
+    for (let k = 0; k < n; k++) { const a = pts[k], b = pts[(k + 1) % n]; c.arcTo(a[0], a[1], b[0], b[1], r); }
+    c.closePath();
+  }
+  const SM_UNIT = SPOLY.map(pts => { const P2 = new Path2D(), n = pts.length, m = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], s0 = m(pts[n - 1], pts[0]);
+    P2.moveTo(s0[0], s0[1]); for (let k = 0; k < n; k++) { const a = pts[k], b = pts[(k + 1) % n]; P2.arcTo(a[0], a[1], b[0], b[1], 0.045); } P2.closePath(); return P2; });
+
+  function paintSmalti(c, S, P, base, k, tone) {
+    const R = srng(k * 977 + tone * 131 + Math.round(base[0] + base[1] * 3 + base[2] * 7));
+    const b0 = tone === 0 ? deep(base, 0.1) : tone === 2 ? lift(base, 0.1) : base;
+    const X = f => P + S * f, pts = smaltiPts(k, P, P, S), rad = S * 0.045;
+    // Kontaktschatten und ein zarter Farbschein im Mörtel
     c.save();
-    c.shadowColor = rgba(lift(base, 0.35), 0.8); c.shadowBlur = S * 0.2; c.shadowOffsetY = S * 0.02;
-    stonePath(c, v, P, P, S, 0, 0.16); c.fillStyle = rgba(base, 1); c.fill();
-    c.shadowColor = "rgba(0,0,0,.55)"; c.shadowBlur = S * 0.035; c.shadowOffsetY = S * 0.03;
+    c.shadowColor = rgba(lift(base, 0.3), 0.3); c.shadowBlur = S * 0.12;
+    polyPath(c, pts, rad); c.fillStyle = rgba(b0, 1); c.fill();
+    c.shadowColor = "rgba(0,0,0,.6)"; c.shadowBlur = S * 0.045; c.shadowOffsetY = S * 0.035; c.shadowOffsetX = S * 0.012;
     c.fill();
     c.restore();
 
-    c.save(); stonePath(c, v, P, P, S, 0, 0.16); c.clip();
-    const t = 0.27;                         // Tafel-Einzug
-    const O = [[X(0), X(0)], [X(1), X(0)], [X(1), X(1)], [X(0), X(1)]];
-    const T = [[X(t), X(t)], [X(1 - t), X(t)], [X(1 - t), X(1 - t)], [X(t), X(1 - t)]];
-    const M = [[X(0.5), X(0)], [X(1), X(0.5)], [X(0.5), X(1)], [X(0), X(0.5)]];
-    const L = [-0.55, -0.83];               // Licht von oben links
-    const tone = (pts, bias) => {
-      let cx = 0, cy = 0; pts.forEach(([x, y]) => { cx += x; cy += y; }); cx = cx / pts.length - X(0.5); cy = cy / pts.length - X(0.5);
-      const n = Math.hypot(cx, cy) || 1;
-      let b = (cx / n) * L[0] + (cy / n) * L[1];
-      b = clamp(b * 0.85 + bias + (R() - 0.5) * 0.18, -1, 1);
-      return b >= 0 ? rgba(lift(base, 0.12 + 0.62 * b), 1) : rgba(deep(base, -0.55 * b), 1);
-    };
-    const facet = (pts, bias) => {
-      c.beginPath(); pts.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
-      c.fillStyle = tone(pts, bias); c.fill();
-    };
-    const edges = [];
-    for (let k = 0; k < 4; k++) {
-      const o0 = O[k], o1 = O[(k + 1) % 4], t0 = T[k], t1 = T[(k + 1) % 4], m = M[k];
-      facet([o0, m, t0], 0.12);
-      facet([m, o1, t1], -0.12);
-      facet([m, t1, t0], 0.28);
-      edges.push([o0, t0], [m, t0], [m, t1]);
+    c.save(); polyPath(c, pts, rad); c.clip();
+    // Neigung: jeder Stein fängt das Licht in einem etwas anderen Winkel
+    const ang = -2.2 + (R() - 0.5) * 1.5, gx = Math.cos(ang) * S * 0.55, gy = Math.sin(ang) * S * 0.55;
+    const g = c.createLinearGradient(X(0.5) + gx, X(0.5) + gy, X(0.5) - gx, X(0.5) - gy);
+    g.addColorStop(0, rgba(lift(b0, 0.2 + R() * 0.14), 1)); g.addColorStop(0.55, rgba(b0, 1)); g.addColorStop(1, rgba(deep(b0, 0.3), 1));
+    c.fillStyle = g; c.fillRect(P, P, S, S);
+    // Farbwolken im Glas
+    for (let n = 0; n < 5; n++) {
+      const x = X(0.1 + R() * 0.8), y = X(0.1 + R() * 0.8), r = S * (0.18 + R() * 0.3);
+      const col = R() < 0.5 ? lift(b0, 0.38) : deep(b0, 0.38);
+      c.save(); c.translate(x, y); c.rotate(R() * 3.14); c.scale(1.6, 0.7);
+      const cg = c.createRadialGradient(0, 0, 0, 0, 0, r); cg.addColorStop(0, rgba(col, 0.32)); cg.addColorStop(1, rgba(col, 0));
+      c.fillStyle = cg; c.fillRect(-r, -r, r * 2, r * 2); c.restore();
     }
-    // Tafel: leuchtet von innen
-    c.beginPath(); T.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath();
-    const tg = c.createRadialGradient(X(0.5), X(0.58), 0, X(0.5), X(0.5), S * 0.36);
-    tg.addColorStop(0, rgba(lift(base, 0.6), 1)); tg.addColorStop(0.6, rgba(lift(base, 0.22), 1)); tg.addColorStop(1, rgba(base, 1));
-    c.fillStyle = tg; c.fill();
-    // Spiegelung quer über die Tafel
-    c.save(); c.clip();
-    const gl = c.createLinearGradient(T[0][0], T[0][1], T[2][0], T[2][1]);
-    gl.addColorStop(0, "rgba(255,255,255,.42)"); gl.addColorStop(0.42, "rgba(255,255,255,.1)"); gl.addColorStop(0.43, "rgba(255,255,255,0)");
-    c.fillStyle = gl; c.fillRect(P, P, S, S);
+    // durchscheinendes Licht im unteren Teil
+    const tg = c.createRadialGradient(X(0.55), X(0.74), 0, X(0.55), X(0.74), S * 0.38);
+    tg.addColorStop(0, rgba(lift(b0, 0.5), 0.42)); tg.addColorStop(1, rgba(lift(b0, 0.5), 0));
+    c.fillStyle = tg; c.fillRect(P, P, S, S);
+    // Tiefe zum Rand
+    const vg = c.createRadialGradient(X(0.5), X(0.5), S * 0.18, X(0.5), X(0.5), S * 0.75);
+    vg.addColorStop(0, rgba(deep(b0, 0.55), 0)); vg.addColorStop(1, rgba(deep(b0, 0.55), 0.55));
+    c.fillStyle = vg; c.fillRect(P, P, S, S);
+    // muschelige Bruchfläche: je Stein anders (oder glatt), heller Grat mit Schattenstufe darunter
+    const kind = Math.floor(R() * 4);
+    if (kind > 0) {
+      let p0, p1, cp;
+      if (kind === 1) { p0 = [P - 1, X(0.2 + R() * 0.25)]; p1 = [P + S + 1, X(0.08 + R() * 0.3)]; cp = [X(0.3 + R() * 0.4), X(R() * 0.1)]; }
+      else if (kind === 2) { p0 = [X(0.35 + R() * 0.3), P - 1]; p1 = [P - 1, X(0.35 + R() * 0.3)]; cp = [X(0.32), X(0.32)]; }
+      else { p0 = [X(0.45 + R() * 0.3), P + S + 1]; p1 = [P + S + 1, X(0.45 + R() * 0.3)]; cp = [X(0.75 + R() * 0.1), X(0.75 + R() * 0.1)]; }
+      const curve = () => { c.moveTo(p0[0], p0[1]); c.quadraticCurveTo(cp[0], cp[1], p1[0], p1[1]); };
+      // helle Seite (zum Licht)
+      c.save(); c.beginPath(); curve();
+      if (kind === 3) { c.lineTo(P + S + 1, P + S + 1); } else { c.lineTo(P - 1, P - 1); }
+      c.closePath(); c.fillStyle = rgba(lift(b0, 0.42), kind === 3 ? 0.1 : 0.17); c.fill(); c.restore();
+      // Schattenstufe direkt neben dem Grat
+      c.save(); c.beginPath(); curve(); c.lineWidth = S * 0.07; c.strokeStyle = rgba(deep(b0, 0.45), 0.22);
+      c.translate(S * 0.012, S * 0.03); c.stroke(); c.restore();
+      c.beginPath(); curve(); c.lineWidth = Math.max(0.8, S * 0.013); c.strokeStyle = "rgba(255,255,255,.3)"; c.stroke();
+    }
+    // matter Himmelsreflex auf der Oberseite
+    const sk = c.createLinearGradient(0, P, 0, X(0.35)); sk.addColorStop(0, "rgba(255,255,255,.1)"); sk.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = sk; c.fillRect(P, P, S, S * 0.35);
+    // Bruchkanten: zum Licht gewandte hell, abgewandte dunkel
+    const n = pts.length;
+    c.lineCap = "round";
+    for (let e = 0; e < n; e++) {
+      const a = pts[e], b = pts[(e + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const face = (dy / len) * -0.6 + (-dx / len) * -0.8;
+      if (Math.abs(face) < 0.15) continue;
+      c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]);
+      c.lineWidth = S * 0.085;
+      c.strokeStyle = face > 0 ? "rgba(255,255,255," + (0.14 + 0.36 * face).toFixed(3) + ")" : rgba(deep(b0, 0.65), (0.6 * -face).toFixed(3));
+      c.stroke();
+    }
+    // Lichtsaum: Licht tritt an der unteren Kante durch das Glas
+    const ls = c.createLinearGradient(0, X(0.6), 0, X(1));
+    ls.addColorStop(0, rgba(lift(b0, 0.7), 0)); ls.addColorStop(1, rgba(lift(b0, 0.7), 0.45));
+    c.lineWidth = S * 0.035; c.strokeStyle = ls; polyPath(c, smaltiPts(k, P, P, S, S * 0.05), rad); c.stroke();
     c.restore();
-    // Schliffkanten
-    c.lineWidth = Math.max(0.8, S * 0.011); c.strokeStyle = "rgba(255,255,255,.28)";
-    c.beginPath(); edges.forEach(([a, b]) => { c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); }); c.stroke();
-    c.lineWidth = Math.max(1, S * 0.016); c.strokeStyle = "rgba(255,255,255,.45)";
-    c.beginPath(); T.forEach(([x, y], k) => k ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); c.stroke();
-    // Lichtsaum: oben hell, unten in der Eigenfarbe
-    const rim = c.createLinearGradient(0, P, 0, P + S);
-    rim.addColorStop(0, "rgba(255,255,255,.75)"); rim.addColorStop(0.4, "rgba(255,255,255,.05)");
-    rim.addColorStop(0.8, rgba(lift(base, 0.6), 0.1)); rim.addColorStop(1, rgba(lift(base, 0.85), 0.7));
-    c.lineWidth = Math.max(1.2, S * 0.04); c.strokeStyle = rim;
-    stonePath(c, v, P, P, S, S * 0.02, 0.15); c.stroke();
-    c.restore();
-    // Feuer: kleine Lichtsterne mit einem Hauch Spektralfarbe
-    const star = (x, y, r, tint) => {
-      c.save(); c.translate(x, y);
-      const g = c.createRadialGradient(0, 0, 0, 0, 0, r);
-      g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.25, tint); g.addColorStop(1, "rgba(255,255,255,0)");
-      c.fillStyle = g;
-      c.beginPath(); c.moveTo(0, -r); c.quadraticCurveTo(0, 0, r, 0); c.quadraticCurveTo(0, 0, 0, r); c.quadraticCurveTo(0, 0, -r, 0); c.quadraticCurveTo(0, 0, 0, -r); c.fill();
-      c.beginPath(); c.arc(0, 0, r * 0.22, 0, 7); c.fillStyle = "rgba(255,255,255,.95)"; c.fill();
-      c.restore();
-    };
-    if (stars) star(T[0][0] + S * 0.01, T[0][1] + S * 0.01, S * 0.13, "rgba(200,240,255,.7)");
-    if (stars && R() < 0.6) { const k = Math.floor(R() * 4); star(M[k][0] * 0.6 + T[(k + 1) % 4][0] * 0.4, M[k][1] * 0.6 + T[(k + 1) % 4][1] * 0.4, S * 0.07, R() < 0.5 ? "rgba(255,200,235,.6)" : "rgba(255,240,190,.6)"); }
-    // feine Kontur
-    c.lineWidth = Math.max(1, S * 0.012); c.strokeStyle = rgba(deep(base, 0.65), 0.6);
-    stonePath(c, v, P, P, S, 0, 0.16); c.stroke();
+    c.lineWidth = Math.max(0.8, S * 0.01); c.strokeStyle = rgba(deep(b0, 0.7), 0.5);
+    polyPath(c, pts, rad); c.stroke();
+  }
+
+  // Lage eines Steins: leicht verdreht, minimal größer oder kleiner, eigene Glasvariante
+  function lay(i) {
+    const h = Math.imul(i + 3, 2654435761) >>> 0;
+    return { rot: (((h >>> 3) % 9) - 4) * 0.011, sc: 1 + (((h >>> 9) % 5) - 2) * 0.012, gv: (h % SNV) + SNV * ((h >>> 13) % 3) };
   }
 
   // Mörtelbett als Muster für das Brett
@@ -1847,7 +1874,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     const ox = (n - pic.W) * cell / 2, oy = (n - pic.H) * cell / 2;
     for (let r = 0; r < pic.H; r++) for (let q = 0; q < pic.W; q++) {
       const i = r * pic.W + q;
-      blit(c, sprite(pic.sol[i] ? "glass" : "matte", pic.col[i], S, pic.vr[i]), ox + q * cell + gap / 2, oy + r * cell + gap / 2, S);
+      const t = lay(i), img = sprite(pic.sol[i] ? "glass" : "matte", pic.col[i], S, pic.sol[i] ? t.gv : pic.vr[i]);
+      c.save(); c.translate(ox + q * cell + cell / 2, oy + r * cell + cell / 2); c.rotate(t.rot); blit(c, img, -S * t.sc / 2, -S * t.sc / 2, S * t.sc); c.restore();
     }
   }
 
@@ -2007,7 +2035,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       const S = L.s * Math.min(2, L.d), t0 = now();
       while (jobs.length && now() - t0 < 8) {
         const i = jobs.shift();
-        if (pic.sol[i]) sprite("glass", pic.col[i], S, pic.vr[i]);
+        if (pic.sol[i]) sprite("gem", pic.col[i], S, lay(i).gv);
         else {
           sprite("matte", pic.col[i], S, pic.vr[i]);
           sprite(pic.clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? pic.col[i] : "", S, pic.vr[i]);
@@ -2379,11 +2407,14 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4600;
     const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
+    let LT = null;
     const put = (img, x, y, sc = 1, alpha = 1, sx = sc) => {
       if (alpha <= 0.002 || sx <= 0.01) return;
       c.globalAlpha = Math.min(1, alpha);
-      const w = s * sx, h = s * sc;
-      blit(c, img, x + (s - w) / 2, y + (s - h) / 2, w, h);
+      const w = s * sx * LT.sc, h = s * sc * LT.sc;
+      c.save(); c.translate(x + s / 2, y + s / 2); c.rotate(LT.rot);
+      blit(c, img, -w / 2, -h / 2, w, h);
+      c.restore();
       c.globalAlpha = 1;
     };
     const over = (x, y, vv, color, alpha, sc = 1, sx = sc) => {
@@ -2392,13 +2423,12 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       c.save(); c.translate(x + (s - w) / 2, y + (s - h) / 2); c.scale(w, h);
       c.globalAlpha = Math.min(1, alpha); c.fillStyle = color; c.fill(UNIT[vv]); c.restore();
     };
-    const filledLook = i => G.zauber ? sprite("gem", col[i], S, pic.vr[i]) : sprite("marble", "", S, pic.vr[i]);
-    const ambient = !REDUCE;
-    let gems = 0;
+    const filledLook = i => G.zauber ? sprite("gem", col[i], S, LT.gv) : sprite("marble", "", S, pic.vr[i]);
     const holeLook = i => sprite(clues[i] >= 0 ? "hole" : "holeDot", G.zauber ? col[i] : "", S, pic.vr[i]);
     for (let r = 0; r < H; r++) for (let q = 0; q < W; q++) {
       const i = r * W + q, x0 = L.xs[q], y = L.ys[r], vv = pic.vr[i];
       let v = G.st[i], dx = 0, red = 0, ap = -1, ak = "";
+      LT = lay(i);
       const a = G.anim[i];
       if (a) {
         const dur = a.k === "wrong" ? 700 : a.k === "fill" ? 420 : a.k === "mark" ? 420 : 300;
@@ -2414,8 +2444,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         const p = clamp((rt - R.d[i]) / 560);
         if (sol[i]) {
           if (!G.zauber) put(sprite("marble", "", S, vv), x, y, 1, 1 - p);
-          put(sprite("gem", col[i], S, vv), x, y, 1, G.zauber ? 1 : p);
-          if (ambient) { sparkle(c, i, x, y, s, t, G.zauber ? 1 : p); gems++; }
+          put(sprite("gem", col[i], S, LT.gv), x, y, 1, G.zauber ? 1 : p);
         } else {
           put(v === 0 ? holeLook(i) : sprite("slate", "", S, vv), x, y, 1, 1 - p);
           put(sprite("matte", col[i], S, vv), x, y, 0.6 + 0.4 * ease(p), p);
@@ -2433,7 +2462,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         put(holeLook(i), x, y, 1);
         put(sprite("slate", "", S, vv), x, y, 0.8 + 0.2 * ease(ap), ease(ap));
       } else if (v < 0) put(sprite("slate", "", S, vv), x, y);
-      else if (v === 1) { put(filledLook(i), x, y); if (G.zauber && ambient) { sparkle(c, i, x, y, s, t, 1); gems++; } }
+      else if (v === 1) put(filledLook(i), x, y);
       else put(holeLook(i), x, y);
       if (red > 0) over(x, y, vv, "#e0605a", red * 0.4);
       // Zahl
@@ -2445,11 +2474,10 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
         if (cs === 1) { const p = clamp((t - G.ct[i]) / 600); alpha *= 1 - 0.66 * p; if (p < 1) busy = true; }
         if (cs === 2) kind = "bad";
         c.globalAlpha = alpha;
-        c.drawImage(numSprite(k, kind, S), x, y, s, s);
+        c.save(); c.translate(x + s / 2, y + s / 2); c.rotate(LT.rot); c.drawImage(numSprite(k, kind, S), -s / 2, -s / 2, s, s); c.restore();
         c.globalAlpha = 1;
       }
     }
-    G.gems = gems;
     // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
     // Block der gedrückten Zahl
@@ -2512,54 +2540,6 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     }
     numCache.set(key, cv);
     return cv;
-  }
-
-  /* Edelsteine leben: ab und zu zieht ein Lichtglanz schräg über einen Stein, die Sterne atmen langsam */
-  let starImg = null;
-  function starSprite() {
-    if (starImg) return starImg;
-    const n = 96, cv = document.createElement("canvas"); cv.width = cv.height = n;
-    const c = cv.getContext("2d"), r = n / 2;
-    const halo = c.createRadialGradient(r, r, 0, r, r, r);
-    halo.addColorStop(0, "rgba(255,255,255,.55)"); halo.addColorStop(0.25, "rgba(220,240,255,.18)"); halo.addColorStop(1, "rgba(255,255,255,0)");
-    c.fillStyle = halo; c.fillRect(0, 0, n, n);
-    c.translate(r, r);
-    for (const [len, w, a] of [[r, r * 0.08, 0.95], [r * 0.55, r * 0.05, 0.6]]) {
-      c.save(); if (len < r) c.rotate(Math.PI / 4);
-      const g = c.createRadialGradient(0, 0, 0, 0, 0, len); g.addColorStop(0, "rgba(255,255,255," + a + ")"); g.addColorStop(1, "rgba(255,255,255,0)");
-      c.fillStyle = g;
-      c.beginPath(); c.moveTo(0, -len); c.quadraticCurveTo(w, -w, len, 0); c.quadraticCurveTo(w, w, 0, len); c.quadraticCurveTo(-w, w, -len, 0); c.quadraticCurveTo(-w, -w, 0, -len); c.fill();
-      c.restore();
-    }
-    c.beginPath(); c.arc(0, 0, r * 0.07, 0, 7); c.fillStyle = "#fff"; c.fill();
-    starImg = cv; return cv;
-  }
-  function sparkle(c, i, x, y, s, t, k) {
-    const h = Math.imul(i + 11, 2654435761) >>> 0;
-    const period = 11000 + (h % 11000), off = (h >>> 8) % period, ph = ((h >>> 4) % 628) / 100;
-    // Lichtglanz
-    const tg = (t + off) % period, dur = 1400;
-    let flare = 0;
-    if (tg < dur) {
-      const g = tg / dur, pos = -0.35 + 1.7 * ease(g), a = 0.38 * Math.sin(g * Math.PI) * k;
-      flare = Math.max(0, 1 - Math.abs(pos - 0.3) * 3.2);
-      c.save(); c.translate(x, y); c.scale(s, s); c.clip(GEMUNIT[G.pic.vr[i]]);
-      const gr = c.createLinearGradient(pos - 0.35, pos - 0.35, pos + 0.35, pos + 0.35);
-      gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(0.5, "rgba(255,255,255," + a + ")"); gr.addColorStop(1, "rgba(255,255,255,0)");
-      c.globalCompositeOperation = "lighter"; c.fillStyle = gr; c.fillRect(0, 0, 1, 1);
-      c.restore();
-    }
-    // atmender Stern
-    const b = 0.5 + 0.5 * Math.sin(t / 1650 + ph);
-    const sz = s * (0.34 + 0.12 * b + 0.22 * flare), al = (0.5 + 0.4 * b + 0.3 * flare) * k;
-    c.globalAlpha = Math.min(1, al);
-    c.drawImage(starSprite(), x + s * 0.29 - sz / 2, y + s * 0.29 - sz / 2, sz, sz);
-    if (h % 5 < 2) { // manche Steine haben einen zweiten, kleineren Stern
-      const b2 = 0.5 + 0.5 * Math.sin(t / 2100 + ph * 1.7), z2 = s * (0.16 + 0.08 * b2);
-      c.globalAlpha = (0.35 + 0.4 * b2) * k;
-      c.drawImage(starSprite(), x + s * 0.7 - z2 / 2, y + s * 0.66 - z2 / 2, z2, z2);
-    }
-    c.globalAlpha = 1;
   }
 
   function blockFrame(i, color, w) {
@@ -2649,13 +2629,12 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   function loop(t) {
     raf = 0;
     let more = false;
-    if (G && screen === "game" && !boardBusy && G.gems && !REDUCE && !parts.length && t - lastBoard < 33) { kick(); return; }
     if (G && screen === "game") {
       if (!G.done && !document.hidden) { G.elapsed += Math.min(1, (t - G.tick) / 1000); }
       G.tick = t;
       lastBoard = t;
       boardBusy = drawBoard(t);
-      more = boardBusy || (G.gems > 0 && !REDUCE) || more;
+      more = boardBusy || more;
     }
     more = drawFx(t) || more;
     if (more) kick();
