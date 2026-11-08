@@ -109,6 +109,10 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .stars i { font-style: normal; transition: opacity .6s, color .6s; display: inline-block; }
 .stars i.off { opacity: .22; color: var(--ink); animation: starLoss .6s ease; }
 @keyframes starLoss { 30% { transform: scale(1.5) rotate(-20deg); } }
+.lives { display: flex; gap: 5px; height: 10px; }
+.lives i { width: 9px; height: 9px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: radial-gradient(circle at 35% 30%, #ffffff, #cfd6ff 45%, #8f96d6); box-shadow: 0 0 6px rgba(200,210,255,.6); transition: opacity .5s, transform .5s; }
+.lives i.gone { opacity: .18; transform: scale(.7); box-shadow: none; background: rgba(255,255,255,.5); }
+#game.broken #board { filter: saturate(.25) brightness(.55); transition: filter 1.2s ease; }
 .gprog { width: 96px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
 .gprog i { display: block; height: 100%; width: 0; background: var(--pearl); transition: width .4s cubic-bezier(.2,.8,.2,1); }
 .gmain { flex: 1; min-height: 0; display: flex; flex-direction: column; }

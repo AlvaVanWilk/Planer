@@ -544,13 +544,19 @@
     }
     const zauber = save.set.mode === "zauber";
     if (zauber) for (let i = 0; i < N; i++) if (st[i] >= 0 && st[i] !== pic.sol[i]) st[i] = -1;
+    const lives = livesFor(pic);
+    if (zauber && mistakes >= lives) { // aus einem alten Spielstand: frisch beginnen
+      st.fill(-1); pic.given.forEach((v, i) => { if (v >= 0) st[i] = v; });
+      mistakes = 0; hints = 0; elapsed = 0; delete save.prog[pic.id];
+    }
     G = {
       pic, N, st, mistakes, hints, elapsed, zauber, tool: 1,
       B: SV.blocks(pic.H, pic.W), undo: [], redo: [],
       anim: new Array(N).fill(null), cs: new Int8Array(N), ct: new Float64Array(N),
       hint: null, done: false, reveal: null, actions: 0, press: -1, lastI: -1, tick: now(), rings: [],
-      firstMistake: !mistakes,
+      firstMistake: !mistakes, lives, over: false,
     };
+    $("#game").classList.remove("broken");
     $("#gWorld").textContent = pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
     $("#gRiddle").textContent = pic.riddle;
     $("#win").hidden = true; $("#win").innerHTML = "";
@@ -693,11 +699,18 @@
   function hud() {
     const sStars = starsFor(G);
     $("#gStars").innerHTML = [0, 1, 2].map(k => '<i class="' + (k < sStars ? "" : "off") + '">★</i>').join("");
+    const lv = $("#gLives");
+    lv.hidden = !G.zauber;
+    const left = Math.max(0, G.lives - G.mistakes);
+    lv.innerHTML = Array.from({ length: G.lives }, (_, k) => '<i class="' + (k < left ? "" : "gone") + '"></i>').join("");
+    lv.setAttribute("aria-label", left + " von " + G.lives + " Versuchen übrig");
     let known = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) known++;
     $("#gProg").style.width = (known / G.N * 100) + "%";
     $("#tUndo").disabled = !G.undo.length;
     const hc = $("#hintCnt"); hc.textContent = G.hints; hc.style.display = G.hints ? "grid" : "none";
   }
+  // Versuche je Bild: 3 bei kleinen Rastern, 4 bei 15–16, 5 bei 18–20
+  function livesFor(pic) { return 3 + Math.floor((Math.max(pic.W, pic.H) - 10) / 4); }
   function starsFor(g) { const pen = (g.zauber ? g.mistakes : 0) + g.hints; return pen === 0 ? 3 : pen <= 2 ? 2 : 1; }
 
   function setCell(i, v, stroke, delay = 0) {
@@ -719,10 +732,12 @@
         G.anim[i] = { t: now(), k: "wrong", from: -1 };
         G.mistakes++; stroke.dead = true;
         AU.oops();
-        if (G.firstMistake) {
+        const left = G.lives - G.mistakes;
+        if (left <= 0) { G.over = true; setTimeout(gameOver, 700); }
+        else if (G.firstMistake) {
           G.firstMistake = false;
-          toast(want === 1 ? "Dieses Feld gehört nicht zum Bild. Es ist jetzt als leer markiert." : "Dieses Feld gehört zum Bild. Mosaik hat es für dich gefüllt.");
-        }
+          toast((want === 1 ? "Dieses Feld gehört nicht zum Bild." : "Dieses Feld gehört zum Bild.") + " Das kostet einen Versuch – noch <b>" + left + "</b>.", 5200);
+        } else toast("Das passt nicht. Noch <b>" + left + "</b> " + (left === 1 ? "Versuch" : "Versuche") + ".", 3200);
         hud();
       } else {
         setCell(i, want, stroke);
@@ -760,14 +775,14 @@
   }
 
   function saveProg() {
-    if (!G || G.done) return;
+    if (!G || G.done || G.over) return;
     let s = ""; for (let i = 0; i < G.N; i++) s += G.st[i] < 0 ? "?" : G.st[i];
     save.prog[G.pic.id] = { st: s, m: G.mistakes, h: G.hints, t: Math.round(G.elapsed) };
     persist();
   }
 
   function checkWin() {
-    if (G.done) return;
+    if (G.done || G.over) return;
     const { sol } = G.pic, st = G.st;
     if (G.zauber) {
       let f = 0; for (let i = 0; i < G.N; i++) if (st[i] === 1) f++;
@@ -786,6 +801,7 @@
     AU.init();
     if (!G) return;
     e.preventDefault();
+    if (G.over) return;
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
     if (ptrs.size === 2) {
@@ -1216,6 +1232,29 @@
     kick();
   }
 
+  function gameOver() {
+    if (!G || !G.over) return;
+    const pic = G.pic;
+    delete save.prog[pic.id]; persist(true);
+    clearTimeout(lpTimer); stroke = null; G.hint = null;
+    $("#game").classList.add("broken", "won");
+    AU.broken();
+    const box = $("#win");
+    box.innerHTML = `<div class="card">
+      <div class="kick">${pic.w.name} · Bild ${pic.pi + 1}</div>
+      <h3>Das Mosaik ist zersprungen</h3>
+      <p class="verse">Alle ${G.lives} Versuche sind aufgebraucht. Jedes Bild lässt sich ohne Raten lösen – wenn du festhängst, zeigt dir die Glühbirne den nächsten Schluss.</p>
+      <div class="row" style="margin-top:18px">
+        <button class="pill" id="oHome">Übersicht</button>
+        <button class="pill primary" id="oAgain">Neu beginnen</button>
+      </div></div>`;
+    box.hidden = false;
+    requestAnimationFrame(() => fitBoard(true)); setTimeout(() => { if (!$("#win").hidden) fitBoard(true); }, 950);
+    $("#oHome").onclick = () => { AU.ui(); leaveGame(); };
+    $("#oAgain").onclick = () => { AU.ui(); startGame(pic); };
+    kick();
+  }
+
   function showCard(on) {
     const box = $("#win");
     if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); return; }
@@ -1245,7 +1284,7 @@
       box.querySelectorAll(".bigstars i").forEach((el, k) => setTimeout(() => { el.classList.add("in"); if (k < rec.stars) AU.star(k); }, 450 + k * 260));
     } else box.querySelectorAll(".bigstars i").forEach(el => el.classList.add("in"));
     $("#game").classList.add("won");
-    requestAnimationFrame(() => fitBoard(true));
+    requestAnimationFrame(() => fitBoard(true)); setTimeout(() => { if (!$("#win").hidden) fitBoard(true); }, 950);
     $("#wLook").onclick = () => { AU.ui(); showCard(false); toast("Tippe auf das Bild, um die Karte wieder zu öffnen.", 2600); };
     $("#wHome").onclick = () => { AU.ui(); leaveGame(); };
     if (nxt) $("#wNext").onclick = () => { AU.ui(); startGame(nxt); };
@@ -1257,17 +1296,21 @@
     board.style.transition = sh.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
     if (!on) { board.style.transform = sh.style.transform = ""; return; }
     const card = $("#win .card"); if (!card) return;
-    board.style.transform = sh.style.transform = "";
-    const b = board.getBoundingClientRect(), cr = card.getBoundingClientRect();
+    // Endlagen aus dem Layout, nicht aus laufenden Animationen
+    const wr = $("#boardWrap").getBoundingClientRect(), wb = $("#win").getBoundingClientRect();
+    const bl = wr.left + parseFloat(board.style.left || 0), bt = wr.top + parseFloat(board.style.top || 0);
+    const b = { left: bl, top: bt, width: L.cw, height: L.ch, right: bl + L.cw, bottom: bt + L.ch };
+    const cr = { left: wb.left + card.offsetLeft, top: wb.top + card.offsetTop };
     const top = $(".gbar").getBoundingClientRect().bottom + 6;
     const side = cr.left > b.left + b.width * 0.5;
     const right = side ? cr.left - 18 : innerWidth - 16, left = 16;
     const bottom = side ? innerHeight - 16 : cr.top - 14;
-    if (b.bottom <= bottom && b.right <= right) return;
+    if (b.bottom <= bottom && b.right <= right) { board.style.transform = sh.style.transform = ""; return; }
     const k = Math.min(1, (bottom - top) / b.height, (right - left) / b.width);
     const dy = (top + bottom) / 2 - (b.top + b.height / 2), dx = side ? (left + right) / 2 - (b.left + b.width / 2) : 0;
     board.style.transform = sh.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + k + ")";
   }
+
 
   /* ---------- Galerie ---------- */
   function renderGallery() {
@@ -1325,7 +1368,7 @@
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
       <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>.</p>
       <p><b>Gedrückt halten</b> auf einer Zahl legt ihren Block automatisch, sobald er feststeht. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
-      <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Fehler und Tipps kosten Sterne. Im Modus <b>Klassisch</b> bleibt alles elfenbeinfarben, bis das Bild fertig ist, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
+      <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> bleibt alles elfenbeinfarben, bis das Bild fertig ist, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
     demo(el.querySelector("canvas"));
     $("#hClose").onclick = () => { AU.init(); AU.ui(); closeSheet(); };
