@@ -2277,17 +2277,19 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0) return;
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false };
-    applyAt(i, stroke);
+    const onClue = G.pic.clues[i] >= 0;
+    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: onClue };
     G.press = i;
-    afterChange();
-    if (G.pic.clues[i] >= 0 && !G.done) lpTimer = setTimeout(() => longPress(i), 430);
+    // Auf einer Zahl abwarten: langes Drücken soll nur vervollständigen, nie das Werkzeug anwenden
+    if (onClue) { lpTimer = setTimeout(() => longPress(i), 430); kick(); }
+    else { applyAt(i, stroke); afterChange(); }
   });
   board.addEventListener("pointermove", e => {
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
     clearTimeout(lpTimer);
+    if (stroke.pending) { stroke.pending = false; applyAt(stroke.start, stroke); if (stroke.dead) { afterChange(); return; } }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
     const r1 = Math.floor(i / W), c1 = i % W;
@@ -2304,6 +2306,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
       clearTimeout(lpTimer);
+      if (stroke.pending && G && !G.done && !G.over) { stroke.pending = false; applyAt(stroke.start, stroke); afterChange(); }
       if (stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
       stroke = null;
       if (G) { G.press = -1; hud(); kick(); }
@@ -2314,7 +2317,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   board.addEventListener("contextmenu", e => e.preventDefault());
 
   function longPress(i) {
-    if (!G || G.done || !stroke || stroke.start !== i || stroke.last !== i) return;
+    if (!G || G.done || G.over || !stroke || stroke.start !== i || stroke.last !== i || !stroke.pending) return;
+    stroke.pending = false; // das Werkzeug wird für diesen Druck nicht mehr angewendet
     const r = SV.singleStep(G.B, G.pic.clues, G.st, i);
     if (!r || r.bad) { AU.tick(0.18); toast("Diese Zahl verrät gerade noch nichts Sicheres."); kick(); return; }
     let k = 0;
@@ -2506,6 +2510,16 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
+    // Ring füllt sich, solange eine Zahl gehalten wird
+    if (!R && stroke && stroke.pending) {
+      const p = clamp((t - stroke.t0) / 430), q = stroke.start % W, r = Math.floor(stroke.start / W);
+      if (p > 0.15) {
+        c.beginPath(); c.arc(L.xs[q] + s / 2, L.ys[r] + s / 2, s * 0.62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ease((p - 0.15) / 0.85));
+        c.lineWidth = Math.max(2, s * 0.06); c.lineCap = "round"; c.strokeStyle = "rgba(10,8,20,.55)"; c.stroke();
+        c.lineWidth = Math.max(1.2, s * 0.035); c.strokeStyle = "rgba(235,238,255,.95)"; c.stroke();
+      }
+      busy = true;
+    }
     // Tipp
     if (G.hint && !R) {
       busy = true;
