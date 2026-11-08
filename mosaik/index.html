@@ -2358,7 +2358,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
 
   /* ---------- Eingabe ---------- */
   const ptrs = new Map();
-  let stroke = null, twoTap = null;
+  let stroke = null, twoTap = null, holdTimer = 0;
+  const HOLD = 380;
 
   board.addEventListener("pointerdown", e => {
     AU.init();
@@ -2368,25 +2369,41 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
     if (ptrs.size === 2) {
-      
+      clearTimeout(holdTimer);
       if (stroke && now() - stroke.t0 < 350 && !G.zauber) {
         revert(stroke.ch); stroke = null; twoTap = { t: now() }; afterChange();
-      }
+      } else if (stroke && stroke.pending) stroke = null;
       return;
     }
     if (ptrs.size > 2) return;
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0) return;
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false };
+    // Erst abwarten: kurz tippen = Werkzeug, gedrückt halten = leer markieren, ziehen = malen
+    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true };
     G.press = i;
-    applyAt(i, stroke);
-    afterChange();
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => holdEmpty(stroke), HOLD);
+    kick();
   });
+  function commitStart(sk) {
+    if (!sk || !sk.pending) return;
+    sk.pending = false; clearTimeout(holdTimer);
+    applyAt(sk.start, sk);
+    afterChange();
+  }
+  function holdEmpty(sk) {
+    if (!G || G.done || G.over || !sk || sk !== stroke || !sk.pending || sk.last !== sk.start) return;
+    sk.pending = false;
+    sk.val = 0; sk.action = !G.zauber && G.st[sk.start] === 0 ? "clear" : "set";
+    applyAt(sk.start, sk);
+    afterChange();
+  }
   board.addEventListener("pointermove", e => {
     if (!G || !stroke || e.pointerId !== stroke.id || stroke.dead || G.done) return;
     const i = cellAt(e.clientX, e.clientY);
     if (i < 0 || i === stroke.last) return;
+    if (stroke.pending) { commitStart(stroke); if (!stroke || stroke.dead) return; }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
     const r1 = Math.floor(i / W), c1 = i % W;
@@ -2399,10 +2416,13 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     afterChange();
   });
   const up = e => {
+    if (!G) { ptrs.delete(e.pointerId); stroke = null; return; }
     ptrs.delete(e.pointerId);
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
-      if (stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
+      clearTimeout(holdTimer);
+      if (stroke.pending && G && !G.done && !G.over) commitStart(stroke);
+      if (stroke && stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
       stroke = null;
       if (G) { G.press = -1; hud(); kick(); }
     }
@@ -2488,7 +2508,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     coached[step] = true;
     const msgs = {
       start: "Jede Zahl zählt die Bildfelder in ihrem <b>3×3-Block</b>. Sie selbst zählt mit.",
-      zero: "Fang bei <b>0</b> und <b>9</b> an: Bei 0 bleibt der Block leer, bei 9 gehört alles zum Bild. Am Rand sind es weniger Felder.",
+      zero: "Fang bei <b>0</b> und <b>9</b> an: Bei 0 bleibt der Block leer, bei 9 gehört alles zum Bild. Leere Felder kannst du auch einfach <b>gedrückt halten</b>.",
     };
     setTimeout(() => toast(msgs[step], 6500), step === "start" ? 700 : 0);
   }
@@ -2584,6 +2604,17 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     }
     // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
     if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
+    // Ring füllt sich beim Gedrückthalten: dann wird das Feld leer markiert
+    if (!R && stroke && stroke.pending) {
+      const p = clamp((t - stroke.t0) / HOLD), q = stroke.start % W, r = Math.floor(stroke.start / W);
+      if (p > 0.25) {
+        const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * ease((p - 0.25) / 0.75);
+        c.beginPath(); c.arc(L.xs[q] + s / 2, L.ys[r] + s / 2, s * 0.6, a0, a1);
+        c.lineCap = "round"; c.lineWidth = Math.max(2.5, s * 0.07); c.strokeStyle = "rgba(10,8,20,.6)"; c.stroke();
+        c.lineWidth = Math.max(1.4, s * 0.04); c.strokeStyle = "rgba(235,238,255,.95)"; c.stroke();
+      }
+      busy = true;
+    }
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
     // Tipp
@@ -3004,7 +3035,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     const el = openSheet(`<h2>So geht Mosaik</h2>
       <canvas class="demo" width="460" height="460"></canvas>
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
-      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>.</p>
+      <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>. <b>Gedrückt halten</b> markiert ein Feld immer als leer, egal welches Werkzeug gewählt ist – hältst du und ziehst dann weiter, wird die ganze Strecke leer.</p>
       <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
       <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
