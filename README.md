@@ -62,16 +62,14 @@ Im Ordner `knoten/` liegt ein Rätselspiel für iPad und Handy, ebenfalls eine
 einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
 `https://BENUTZERNAME.github.io/REPONAME/knoten/`.
 
-- Perlen sind mit Fäden verbunden und sitzen auf festen Plätzen. Zieht man eine Perle auf eine
-  andere, tauschen die beiden die Plätze (oder: erst eine antippen, dann die andere).
-  Ziel: kein Faden kreuzt mehr – kupferrot leuchtende Fäden kreuzen sich noch.
-- Jeder Tausch kostet einen Zug. Die Punkte oben sind das Zugbudget: goldene Punkte sind das
-  Ideal, graue die Reserve. Wer mit dem Ideal löst, bekommt drei Sterne; sind alle Züge
-  verbraucht, ist der Knoten verheddert und es geht von vorn los.
-- Während des Ziehens wird nichts neu bewertet – erst denken, dann tauschen.
-- Jedes Level ist fest und garantiert lösbar: Es entsteht aus einem kreuzungsfreien Netz, in
-  dem Perlen in Zweier-, später auch Dreier- und Viererkreisen vertauscht werden. Kein
-  einzelner Tausch löst es vorzeitig.
-- Die Glühbirne zeigt eine falsch liegende Perle und kostet einen Zug.
-- Zwei Finger auf freier Fläche zoomen, doppelt tippen setzt die Ansicht zurück.
-- Jeder gelöste Knoten wird zu einem Bleiglasfenster; im Menü liegen alle als Galerie.
+- Seidenkordeln stecken mit beiden Enden in Messingösen. Zieht man ein Ende in eine freie Öse,
+  spannt sich die Kordel neu. Ziel: keine Kordel kreuzt mehr eine andere – die Kreuzungspunkte
+  glimmen kupferrot.
+- Die Uhr läuft ab dem ersten Griff. Ist noch die halbe Zeit übrig, gibt es drei Sterne,
+  bei einem Viertel zwei, sonst einen. Läuft sie ab, beginnt das Level von vorn.
+- Wird eine Kordel frei, klingt sie wie eine gezupfte Saite – lange tief, kurze hoch. Beim
+  Lösen wird die ganze Harfe von links nach rechts gespielt.
+- Rückgängig ist frei; die Glühbirne zeigt einen guten Zug und kostet zehn Sekunden.
+- Jedes Level ist fest und garantiert lösbar: Es entsteht aus einer kreuzungsfreien Lage, die
+  mit echten Zügen verwirrt wird. Später gibt es mehr Kordeln, größere Raster und weniger freie Ösen.
+- Im Menü liegen alle gelösten Level als Galerie, mit Sternen.
