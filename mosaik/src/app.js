@@ -46,18 +46,95 @@
   const byId = id => PICS.find(p => p.id === id);
 
   /* ---------- Speicher ---------- */
-  const KEY = "mosaik.v1";
+  // Spielstand je Person: ohne Konto unter "mosaik.v1", mit Konto unter "mosaik.v1:name"
+  const ANON = "mosaik.v1";
+  let KEY = ANON;
   const DEF = { mode: "zauber", sound: true, music: true, auto: false };
   const save = { solved: {}, prog: {}, set: Object.assign({}, DEF), help: false, last: null };
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (s) { Object.assign(save, s); save.set = Object.assign({}, DEF, s.set || {}); }
-  } catch (e) { /* ohne Speicher spielen */ }
+  function useSave(obj) {
+    for (const k of Object.keys(save)) delete save[k];
+    Object.assign(save, { solved: {}, prog: {}, help: false, last: null }, obj || {});
+    save.set = Object.assign({}, DEF, (obj && obj.set) || {});
+    if (!save.solved || Array.isArray(save.solved)) save.solved = {};
+    if (!save.prog || Array.isArray(save.prog)) save.prog = {};
+    AU.setSound(save.set.sound); AU.setMusic(save.set.music);
+  }
+  function readLocal(key) { try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; } }
+  try { const s0 = readLocal(KEY); if (s0) { Object.assign(save, s0); save.set = Object.assign({}, DEF, s0.set || {}); } } catch (e) { /* ohne Speicher spielen */ }
   let saveTimer = 0;
   function persist(immediate) {
     clearTimeout(saveTimer);
-    const go = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* voll oder gesperrt */ } };
+    const go = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* voll oder gesperrt */ } syncLater(immediate); };
     if (immediate) go(); else saveTimer = setTimeout(go, 400);
+  }
+
+  /* ---------- Konten (nur wenn api.php auf dem Webspace läuft) ---------- */
+  const ACC = { online: false, canRegister: false, name: null, token: null, busy: false };
+  const ACCKEY = "mosaik.konto";
+  try { const a = JSON.parse(localStorage.getItem(ACCKEY) || "null"); if (a && a.name && a.token) { ACC.name = a.name; ACC.token = a.token; KEY = ANON + ":" + a.name.toLowerCase(); } } catch (e) { /* kein Konto gemerkt */ }
+  if (KEY !== ANON) { const s1 = readLocal(KEY); useSave(s1); }
+  async function api(body, timeout = 8000) {
+    const ctl = window.AbortController ? new AbortController() : null;
+    const tm = setTimeout(() => ctl && ctl.abort(), timeout);
+    try {
+      const r = await fetch("api.php", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined, keepalive: body.action === "save" });
+      const j = await r.json().catch(() => ({ ok: false, error: "Der Server antwortet nicht richtig." }));
+      j.status = r.status; return j;
+    } catch (e) { return { ok: false, error: "Keine Verbindung zum Server.", status: 0 }; }
+    finally { clearTimeout(tm); }
+  }
+  async function probeServer() {
+    if (location.protocol === "file:") return false;
+    try {
+      const ctl = window.AbortController ? new AbortController() : null;
+      setTimeout(() => ctl && ctl.abort(), 4000);
+      const r = await fetch("api.php", { cache: "no-store", signal: ctl ? ctl.signal : undefined });
+      const j = await r.json();
+      if (j && j.ok && j.app === "mosaik") { ACC.online = true; ACC.canRegister = !!j.register; return true; }
+    } catch (e) { /* kein PHP hier */ }
+    return false;
+  }
+  function rememberAccount() {
+    try { if (ACC.token) localStorage.setItem(ACCKEY, JSON.stringify({ name: ACC.name, token: ACC.token })); else localStorage.removeItem(ACCKEY); } catch (e) { /* egal */ }
+  }
+  let syncT = 0, syncReset = false;
+  function syncLater(now_) {
+    if (!ACC.online || !ACC.token) return;
+    clearTimeout(syncT);
+    syncT = setTimeout(syncNow, now_ ? 0 : 1800);
+  }
+  async function syncNow() {
+    if (!ACC.online || !ACC.token) return;
+    const body = { action: "save", name: ACC.name, token: ACC.token, save };
+    if (syncReset) { body.reset = true; syncReset = false; }
+    const j = await api(body);
+    if (j.status === 401) { signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); }
+  }
+  async function pullServer() {
+    if (!ACC.online || !ACC.token) return;
+    const j = await api({ action: "load", name: ACC.name, token: ACC.token });
+    if (j.status === 401) { signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (!j.ok || !j.save) return;
+    // Server und Gerät zusammenführen: gelöste Bilder vereinen, Spielstände vom Server
+    const merged = Object.assign({}, j.save);
+    merged.solved = Object.assign({}, save.solved, j.save.solved || {});
+    for (const id of Object.keys(save.solved)) if (j.save.solved && j.save.solved[id] && j.save.solved[id].stars < save.solved[id].stars) merged.solved[id] = save.solved[id];
+    merged.prog = Object.assign({}, save.prog, j.save.prog || {});
+    if (!G) { useSave(merged); persist(true); if (screen === "home") renderHome(); }
+  }
+  function signedIn(name, token, serverSave) {
+    ACC.name = name; ACC.token = token; rememberAccount();
+    KEY = ANON + ":" + name.toLowerCase();
+    useSave(serverSave || readLocal(KEY) || {});
+    persist(true);
+    renderHome(); accountPill();
+  }
+  function signedOut(msg) {
+    ACC.token = null; ACC.name = null; rememberAccount();
+    KEY = ANON; useSave(readLocal(ANON) || {});
+    if (G) { G = null; show("home"); }
+    renderHome(); accountPill();
+    openAccount(msg);
   }
   AU.soundOn = save.set.sound; AU.musicOn = save.set.music;
 
@@ -1331,6 +1408,68 @@
   }
   function closeSheet() { sheet.hidden = true; sheet.innerHTML = ""; }
 
+  function accountPill() {
+    const b = $("#btnAccount");
+    b.hidden = !ACC.online;
+    b.lastChild.textContent = ACC.token ? ACC.name : "Anmelden";
+  }
+  function openAccount(msg) {
+    if (ACC.token) {
+      const el = openSheet(`<h2>${esc(ACC.name)}</h2>
+        <p>Dein Fortschritt wird automatisch auf dem Webspace gesichert. Auf einem anderen Gerät meldest du dich einfach mit demselben Namen und Passwort an.</p>
+        <div class="acts"><button class="pill" id="aOut">Abmelden</button><button class="pill primary" id="aClose">Fertig</button></div>`);
+      $("#aClose").onclick = () => { AU.ui(); closeSheet(); };
+      $("#aOut").onclick = async () => { AU.ui(); const t = ACC.token, n = ACC.name; await syncNow(); api({ action: "logout", name: n, token: t }); closeSheet(); signedOut(); };
+      return el;
+    }
+    const anon = readLocal(ANON), anonCount = anon && anon.solved ? Object.keys(anon.solved).length : 0;
+    let mode = "login";
+    const el = openSheet(`<h2>Willkommen bei Mosaik</h2>
+      ${msg ? `<p class="aMsg">${esc(msg)}</p>` : `<p>Mit einem Konto wird dein Fortschritt gesichert und ist auf jedem Gerät da.</p>`}
+      <div class="atabs" role="tablist"><button id="tabIn" class="on" role="tab">Anmelden</button><button id="tabNew" role="tab">Neues Konto</button></div>
+      <form id="accForm" novalidate>
+        <label class="fld">Name<input id="accName" autocomplete="username" autocapitalize="words" spellcheck="false" maxlength="24" required></label>
+        <label class="fld">Passwort<input id="accPw" type="password" autocomplete="current-password" maxlength="200" required></label>
+        <label class="fld reg" hidden>Familiencode<input id="accCode" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        ${anonCount ? `<label class="chk reg" hidden><input type="checkbox" id="accTake" checked> Die ${anonCount} gelösten Bilder auf diesem Gerät übernehmen</label>` : ""}
+        <p class="aErr" id="accErr" role="alert"></p>
+        <div class="acts"><button type="button" class="pill" id="accSkip">Ohne Konto spielen</button><button type="submit" class="pill primary" id="accGo">Anmelden</button></div>
+      </form>`);
+    sheet.onclick = null; // nicht versehentlich wegtippen
+    const setMode = m => {
+      mode = m;
+      $("#tabIn").classList.toggle("on", m === "login"); $("#tabNew").classList.toggle("on", m === "register");
+      el.querySelectorAll(".reg").forEach(x => { x.hidden = m !== "register"; });
+      $("#accPw").setAttribute("autocomplete", m === "login" ? "current-password" : "new-password");
+      $("#accGo").textContent = m === "login" ? "Anmelden" : "Konto anlegen";
+      $("#accErr").textContent = m === "register" && !ACC.canRegister ? "Neue Konten sind auf diesem Webspace noch nicht freigeschaltet (Familiencode fehlt in api.php)." : "";
+    };
+    $("#tabIn").onclick = () => setMode("login");
+    $("#tabNew").onclick = () => setMode("register");
+    $("#accSkip").onclick = () => { AU.ui(); closeSheet(); };
+    $("#accForm").onsubmit = async e => {
+      e.preventDefault();
+      if (ACC.busy) return;
+      const name = $("#accName").value.trim(), password = $("#accPw").value;
+      const err = $("#accErr");
+      if (name.length < 2) { err.textContent = "Bitte gib einen Namen mit mindestens 2 Zeichen ein."; return; }
+      if (password.length < 4) { err.textContent = "Das Passwort braucht mindestens 4 Zeichen."; return; }
+      ACC.busy = true; $("#accGo").disabled = true; err.textContent = "";
+      const body = { action: mode, name, password };
+      if (mode === "register") { body.code = $("#accCode").value.trim(); const tk = $("#accTake"); if (tk && tk.checked && anon) body.save = anon; }
+      const j = await api(body);
+      ACC.busy = false; $("#accGo").disabled = false;
+      if (!j.ok) { err.textContent = j.error || "Das hat nicht geklappt."; return; }
+      AU.init(); AU.star(2);
+      closeSheet();
+      signedIn(j.name, j.token, j.save);
+    };
+    setTimeout(() => { try { $("#accName").focus({ preventScroll: true }); } catch (e) { /* egal */ } }, 300);
+    return el;
+  }
+  const esc = t => String(t).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  $("#btnAccount").onclick = () => { AU.init(); AU.ui(); openAccount(); };
+
   function openView(p) {
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
@@ -1393,7 +1532,7 @@
       const row = $("#sReset").parentElement;
       row.innerHTML = `<div class="tx"><b>Wirklich alles löschen?</b><small>Das lässt sich nicht rückgängig machen.</small></div><button class="pill" id="sNo">Abbrechen</button><button class="pill danger" id="sYes">Ja, löschen</button>`;
       $("#sNo").onclick = () => { closeSheet(); openSettings(); };
-      $("#sYes").onclick = () => { save.solved = {}; save.prog = {}; save.last = null; persist(true); closeSheet(); renderHome(); };
+      $("#sYes").onclick = () => { save.solved = {}; save.prog = {}; save.last = null; syncReset = true; persist(true); closeSheet(); renderHome(); };
     };
     $("#sClose").onclick = () => { AU.ui(); closeSheet(); };
   }
@@ -1426,6 +1565,12 @@
     } catch (e) { /* Symbole sind Zierde */ }
   })();
   renderHome();
+  probeServer().then(on => {
+    accountPill();
+    if (!on) return;
+    if (ACC.token) pullServer();
+    else openAccount();
+  });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
   try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
   window.__mosaik = { numFont(f, w, z) { NUM.family = f; NUM.weight = w; NUM.size = z || 0.6; numCache.clear(); kick(); }, PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };

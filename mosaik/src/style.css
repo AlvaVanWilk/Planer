@@ -213,6 +213,16 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .view { text-align: center; }
 .view p { text-wrap: balance; }
 .danger { color: var(--rose); }
+.atabs { display: flex; gap: 6px; padding: 5px; border-radius: 18px; background: rgba(0,0,0,.25); border: 1px solid var(--line); margin: 6px 0 16px; }
+.atabs button { flex: 1; height: 44px; border-radius: 13px; color: var(--muted); font-size: 15px; transition: background .2s, color .2s; }
+.atabs button.on { background: var(--ink); color: #1a1622; }
+.fld { display: block; font-size: 13px; letter-spacing: .04em; color: var(--muted); margin-bottom: 12px; }
+.fld input { display: block; width: 100%; margin-top: 6px; height: 50px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 400 17px var(--ui); outline: none; -webkit-user-select: text; user-select: text; }
+.fld input:focus { border-color: rgba(228,224,255,.7); background: rgba(255,255,255,.09); }
+.chk { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--muted); margin: 4px 0 8px; }
+.chk input { width: 20px; height: 20px; accent-color: #b9b2ff; }
+.aErr { min-height: 20px; color: var(--rose); font-size: 14px; margin: 4px 0 0; }
+.aMsg { color: var(--rose) !important; }
 
 #fx { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 15; }
 

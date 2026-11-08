@@ -187,39 +187,39 @@
   }
 
   /* Rätsel aus einem Bild bauen.
-     opts: pair (bool), remove (0..1, Anteil der Zahlen, die höchstens wegfallen), seed */
+     opts: pair (bool, Paarschlüsse erlaubt), remove (Anteil der Zahlen, die höchstens wegfallen),
+           maxPairs (höchstens so viele Paarschlüsse), seed */
   function build(sol, H, W, opts) {
     const N = H * W, B = blocks(H, W);
     const clues = countClues(sol, H, W);
     const given = new Int8Array(N).fill(-1);
-    // Notfalls Startfelder vorgeben, bis der Löser durchkommt.
-    let res = solve(H, W, clues, given, { pair: true, B });
-    let guard = 0;
-    while (!res.ok && guard++ < N) {
-      let pick = -1;
-      for (let i = 0; i < N; i++) if (res.st[i] < 0) { pick = i; break; }
-      given[pick] = sol[pick];
-      res = solve(H, W, clues, given, { pair: true, B });
-    }
-    const pair = !!opts.pair;
-    if (!solve(H, W, clues, given, { pair, B }).ok) {
-      // Mit nur Einzel-Schlüssen nicht machbar: dann eben mit Paaren.
-      opts = Object.assign({}, opts, { pair: true });
-    }
+    const pair = !!opts.pair, cap = opts.maxPairs == null ? Infinity : opts.maxPairs;
     const R = rng(opts.seed || 1);
+    const fits = r => r.ok && r.pairSteps <= cap;
+    // Notfalls Startsteine vorgeben, bis das Bild mit den erlaubten Schlüssen lösbar ist
+    let res = solve(H, W, clues, given, { pair, B }), guard = 0;
+    while (!fits(res) && guard++ < N) {
+      const open = [];
+      for (let i = 0; i < N; i++) if (res.st[i] < 0) open.push(i);
+      const filled = open.filter(i => sol[i]);
+      const pool = filled.length ? filled : open;
+      const pick = pool[Math.floor(R() * pool.length)];
+      given[pick] = sol[pick];
+      res = solve(H, W, clues, given, { pair, B });
+    }
     const order = [];
     for (let i = 0; i < N; i++) order.push(i);
     for (let i = N - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-    const cap = Math.floor(N * (opts.remove == null ? 1 : opts.remove));
+    const maxRemove = Math.floor(N * (opts.remove == null ? 1 : opts.remove));
     let removed = 0;
     for (const i of order) {
-      if (removed >= cap) break;
+      if (removed >= maxRemove) break;
       const k = clues[i];
       clues[i] = -1;
-      if (solve(H, W, clues, given, { pair: opts.pair, B }).ok) removed++;
+      if (fits(solve(H, W, clues, given, { pair, B }))) removed++;
       else clues[i] = k;
     }
-    const fin = solve(H, W, clues, given, { pair: opts.pair, B });
+    const fin = solve(H, W, clues, given, { pair, B });
     return { clues, given, pairSteps: fin.pairSteps, ok: fin.ok };
   }
 
