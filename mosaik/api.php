@@ -162,6 +162,21 @@ switch ($action) {
     foreach ($list as $i => &$e) $e['rank'] = $i + 1;
     out(['ok' => true, 'entries' => $list]);
   }
+  case 'family': {
+    [$key, $me] = findByToken($in['name'] ?? '', $in['token'] ?? '');
+    $users = [];
+    foreach (glob("$dir/u_*.php") ?: [] as $f) {
+      $u = readUser(substr(basename($f, '.php'), 2));
+      if (!$u) continue;
+      $solved = [];
+      foreach (($u['save']['solved'] ?? []) as $id => $rec) {
+        if (!is_array($rec) || !preg_match('/^[a-z0-9_-]{1,32}$/', (string)$id)) continue;
+        $solved[$id] = ['stars' => max(0, min(3, (int)($rec['stars'] ?? 0))), 'time' => max(0, (int)($rec['time'] ?? 0))];
+      }
+      $users[] = ['name' => $u['name'], 'me' => $u['name'] === $me['name'], 'solved' => (object)$solved];
+    }
+    out(['ok' => true, 'users' => $users]);
+  }
   case 'logout': {
     [$key, $u] = findByToken($in['name'] ?? '', $in['token'] ?? '');
     $h = hash('sha256', (string)$in['token']);
