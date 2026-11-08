@@ -990,7 +990,7 @@
   }
   /* Zahlen: in Schiefer graviert und mit Blattgold gefüllt, ins Glas geätzt, in Marmor gemeißelt */
   const numCache = new Map();
-  const NUMFONT = '"Gloock", "Iowan Old Style", "Palatino Linotype", Georgia, serif';
+  const NUM = { family: '"Poiret One", "Avenir Next", "Helvetica Neue", sans-serif', weight: 400, size: 0.64 };
   function numSprite(k, kind, S) {
     S = Math.max(8, Math.round(S));
     const key = k + kind + S;
@@ -999,7 +999,7 @@
     if (numCache.size > 200) numCache.clear();
     cv = document.createElement("canvas"); cv.width = cv.height = S;
     const c = cv.getContext("2d"), d = String(k), cx = S / 2, cy = S * 0.535, e = Math.max(1, S * 0.022);
-    c.font = "400 " + Math.round(S * 0.6) + "px " + NUMFONT;
+    c.font = NUM.weight + " " + Math.round(S * NUM.size) + "px " + NUM.family;
     c.textAlign = "center"; c.textBaseline = "middle";
     const gold = (a, b, m) => { const g = c.createLinearGradient(0, cy - S * 0.24, 0, cy + S * 0.24); g.addColorStop(0, a); g.addColorStop(0.5, m); g.addColorStop(1, b); return g; };
     if (kind === "stone" || kind === "hole" || kind === "bad") {
@@ -1012,10 +1012,12 @@
       c.fillStyle = sh; c.fillRect(0, 0, S, S); c.restore();
       if (kind === "hole") { c.globalCompositeOperation = "destination-in"; c.fillStyle = "rgba(0,0,0,.72)"; c.fillRect(0, 0, S, S); }
     } else if (kind === "gem") {
+      c.lineJoin = "round"; c.lineWidth = S * 0.035; c.strokeStyle = "rgba(0,0,0,.28)"; c.strokeText(d, cx, cy + e * 0.6);
       c.fillStyle = "rgba(0,0,0,.38)"; c.fillText(d, cx, cy + e * 1.2);
       const g = c.createLinearGradient(0, cy - S * 0.24, 0, cy + S * 0.24); g.addColorStop(0, "rgba(255,255,255,.98)"); g.addColorStop(1, "rgba(255,255,255,.78)");
       c.fillStyle = g; c.fillText(d, cx, cy);
     } else if (kind === "gemL") {
+      c.lineJoin = "round"; c.lineWidth = S * 0.03; c.strokeStyle = "rgba(255,255,255,.35)"; c.strokeText(d, cx, cy);
       c.fillStyle = "rgba(255,255,255,.55)"; c.fillText(d, cx, cy + e);
       c.fillStyle = "rgba(60,36,10,.88)"; c.fillText(d, cx, cy);
     } else { // Marmor
@@ -1385,6 +1387,6 @@
   fxSize();
   renderHome();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
-  try { document.fonts && document.fonts.load('400 40px "Gloock"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
-  window.__mosaik = { PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
+  try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
+  window.__mosaik = { numFont(f, w, z) { NUM.family = f; NUM.weight = w; NUM.size = z || 0.6; numCache.clear(); kick(); }, PICS, save, drawMosaic, get G() { return G; }, startGame, win: () => G && win() };
 })();
