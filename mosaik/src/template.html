@@ -1,0 +1,73 @@
+<!--HEAD-->
+<title>Mosaik</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mosaik">
+<meta name="theme-color" content="#0f0d17">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gloock&family=Lexend:wght@300;400;500;600&display=swap">
+<style>/*CSS*/</style>
+<!--BODY-->
+<div id="bg"><div id="glow"></div><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i><div class="grain"></div></div>
+
+<main id="home" class="screen">
+  <div class="wrap">
+    <header class="hero">
+      <canvas id="logoTiles" width="504" height="72"></canvas>
+      <h1>Mosaik</h1>
+      <p class="tag">Zahlen, die Bilder verraten</p>
+      <div class="rank">
+        <div class="rn"><small>Rang</small><b id="rankName">Kiesel</b></div>
+        <div class="bar"><i id="rankBar"></i></div>
+        <div class="sc" id="starCount">0 ★</div>
+      </div>
+      <div class="continue" id="continueWrap"></div>
+    </header>
+    <section id="worlds"></section>
+    <nav class="homeNav">
+      <button class="pill" id="btnGallery"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="8.5" r="1.5"/></svg>Galerie</button>
+      <button class="pill" id="btnHelp"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.7"/><circle cx="12" cy="17" r=".6"/></svg>Spielregeln</button>
+      <button class="pill" id="btnSettings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Einstellungen</button>
+    </nav>
+  </div>
+</main>
+
+<main id="game" class="screen" hidden>
+  <header class="gbar">
+    <button class="ib" id="gBack" aria-label="Zurück zur Übersicht"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="gtitle"><div class="gworld" id="gWorld"></div><div class="griddle" id="gRiddle"></div></div>
+    <div class="gstat"><div class="stars" id="gStars"></div><div class="gprog"><i id="gProg"></i></div></div>
+  </header>
+  <div class="gmain">
+    <div id="boardWrap"><canvas id="board"></canvas></div>
+    <div class="toolsWrap">
+      <div class="toast" id="toast"></div>
+      <footer class="tools">
+        <button class="ib" id="tUndo" aria-label="Rückgängig"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+        <div class="seg" role="radiogroup" aria-label="Werkzeug">
+          <button id="tFill" class="on" role="radio" aria-checked="true"><span class="sw"></span>Füllen</button>
+          <button id="tMark" role="radio" aria-checked="false"><span class="sx"></span>Leer</button>
+        </div>
+        <button class="ib" id="tHint" aria-label="Tipp"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="cnt" id="hintCnt"></span></button>
+      </footer>
+    </div>
+  </div>
+  <section id="win" hidden></section>
+</main>
+
+<main id="gallery" class="screen" hidden>
+  <div class="wrap">
+    <header class="ghead">
+      <button class="ib" id="galBack" aria-label="Zurück"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h2>Galerie</h2><span id="galCount"></span>
+    </header>
+    <div id="galBody"></div>
+  </div>
+</main>
+
+<div id="sheet" hidden></div>
+<canvas id="fx"></canvas>
+<script>/*JS*/</script>

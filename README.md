@@ -70,3 +70,25 @@ einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
 - Unendlich viele Level, in Kapiteln zu je zehn mit eigener Farbstimmung. Jedes Level ist
   garantiert lösbar (es wird aus einem kreuzungsfreien Netz erzeugt und dann verwirrt).
 - Rückgängig-Knopf, Glühbirne zeigt die verworrenste Perle. Fortschritt wird im Browser gespeichert.
+
+---
+
+# Mosaik – Zahlen, die Bilder verraten
+
+Im Ordner `mosaik/` liegt ein Mosaik-Rätsel (Fill-a-Pix) für iPad und Handy, ebenfalls
+eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
+`https://BENUTZERNAME.github.io/REPONAME/mosaik/`.
+
+- Jede Zahl sagt, wie viele Felder in ihrem 3×3-Block (sie selbst eingeschlossen) zum Bild gehören.
+- Unten zwischen **Füllen** und **Leer** wählen, dann tippen oder mit dem Finger über Felder ziehen.
+  Eine Zahl **gedrückt halten** legt ihren Block, sobald er feststeht. Die Glühbirne zeigt den nächsten Schluss.
+- **Farbenzauber** (Standard): Jeder richtige Stein leuchtet sofort in seiner Farbe auf, Fehler werden
+  korrigiert und kosten Sterne. **Klassisch**: wie in der Zeitschrift, Farben erst am Ende; zwei Finger
+  tippen macht den letzten Zug rückgängig.
+- 36 Bilder in sechs Welten (10×10 bis 20×20), jede mit eigener Farbstimmung und Tonart.
+  Vier gelöste Bilder öffnen die nächste Welt. Sterne ergeben Ränge, gelöste Bilder landen in der Galerie.
+- Jedes Rätsel ist eindeutig und ohne Raten lösbar; das prüft der eingebaute Löser beim Bauen.
+- Fortschritt wird im Browser gespeichert. Klänge und Musik werden live erzeugt.
+
+`mosaik/index.html` ist erzeugt. Die Quelle liegt in `mosaik/src/` (Bilder in `images.js`),
+neu bauen mit `node mosaik/tools/build.js`.
