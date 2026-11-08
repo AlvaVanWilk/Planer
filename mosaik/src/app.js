@@ -526,7 +526,7 @@
     $("#gWorld").textContent = pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
     $("#gRiddle").textContent = pic.riddle;
     $("#win").hidden = true; $("#win").innerHTML = "";
-    $("#game").classList.remove("won"); board.style.transform = ""; board.style.transition = "";
+    $("#game").classList.remove("won"); board.style.transform = board.style.transition = ""; $("#boardShadow").style.transform = $("#boardShadow").style.transition = "";
     $("#glow").style.opacity = 0;
     setTool(1);
     $("#tUndo").style.display = zauber ? "none" : "";
@@ -568,8 +568,8 @@
     if (!G) return;
     const wrap = $("#boardWrap").getBoundingClientRect();
     const { W, H } = G.pic;
-    const ux = W + (W - 1) * 0.075 + Math.floor((W - 1) / 5) * 0.14 + 0.7;
-    const uy = H + (H - 1) * 0.075 + Math.floor((H - 1) / 5) * 0.14 + 0.7;
+    const ux = W + (W - 1) * 0.08 + 0.7;
+    const uy = H + (H - 1) * 0.08 + 0.7;
     const s = Math.max(10, Math.floor(Math.min((wrap.width - 4) / ux, (wrap.height - 4) / uy, 70)));
     L.s = s; L.cw = Math.round(s * ux); L.ch = Math.round(s * uy);
     L.d = Math.min(3, window.devicePixelRatio || 1);
@@ -577,11 +577,39 @@
     board.style.left = Math.round((wrap.width - L.cw) / 2) + "px"; board.style.top = Math.round((wrap.height - L.ch) / 2) + "px";
     board.width = Math.round(L.cw * L.d); board.height = Math.round(L.ch * L.d);
     geom(1);
+    const sh = $("#boardShadow");
+    Object.assign(sh.style, { left: board.style.left, top: board.style.top, width: L.cw + "px", height: L.ch + "px", borderRadius: Math.round(s * 0.42) + "px" });
+    buildTray();
     fxSize();
     kick();
   }
+  // Tablett (Mörtelbett mit Innenschatten und Lichtkante) und Raumlicht einmal vorab rendern
+  function buildTray() {
+    const d = L.d, W = Math.round(L.cw * d), H = Math.round(L.ch * d), r = L.s * 0.42 * d;
+    const mk = () => { const cv = document.createElement("canvas"); cv.width = W; cv.height = H; return cv; };
+    const tray = L.tray && L.tray.width === W && L.tray.height === H ? L.tray : mk();
+    let c = tray.getContext("2d"); c.clearRect(0, 0, W, H);
+    rr(c, 0, 0, W, H, r); c.fillStyle = mortarPattern(c); c.fill();
+    c.save(); rr(c, 0, 0, W, H, r); c.clip();
+    const tg = c.createLinearGradient(0, 0, 0, H); tg.addColorStop(0, "rgba(255,255,255,.035)"); tg.addColorStop(1, "rgba(0,0,0,.22)");
+    c.fillStyle = tg; c.fillRect(0, 0, W, H);
+    c.shadowColor = "rgba(0,0,0,.85)"; c.shadowBlur = 22 * d; c.shadowOffsetY = 6 * d;
+    c.beginPath(); c.rect(-W, -H, W * 3, H * 3); rr(c, 0, 0, W, H, r); c.fillStyle = "#000"; c.fill("evenodd");
+    c.restore();
+    const rim = c.createLinearGradient(0, 0, 0, H); rim.addColorStop(0, "rgba(255,255,255,.22)"); rim.addColorStop(0.12, "rgba(255,255,255,.05)"); rim.addColorStop(1, "rgba(255,255,255,.03)");
+    rr(c, 0.5 * d, 0.5 * d, W - d, H - d, r); c.lineWidth = 1.2 * d; c.strokeStyle = rim; c.stroke();
+    L.tray = tray;
+    const light = L.light && L.light.width === W && L.light.height === H ? L.light : mk();
+    c = light.getContext("2d"); c.clearRect(0, 0, W, H);
+    c.save(); rr(c, 0, 0, W, H, r); c.clip();
+    const lg = c.createRadialGradient(W * 0.28, H * 0.12, 0, W * 0.28, H * 0.12, Math.max(W, H) * 1.05);
+    lg.addColorStop(0, "rgba(255,250,240,.13)"); lg.addColorStop(0.45, "rgba(255,255,255,.02)"); lg.addColorStop(0.75, "rgba(0,0,0,.08)"); lg.addColorStop(1, "rgba(0,0,0,.32)");
+    c.fillStyle = lg; c.fillRect(0, 0, W, H);
+    c.restore();
+    L.light = light;
+  }
   function geom(k) {
-    const s = L.s, g = s * 0.075 * k, bx = s * 0.14 * k, { W, H } = G.pic;
+    const s = L.s, g = s * 0.08 * k, bx = 0, { W, H } = G.pic;
     const tw = W * s + (W - 1) * g + Math.floor((W - 1) / 5) * bx;
     const th = H * s + (H - 1) * g + Math.floor((H - 1) / 5) * bx;
     const ox = (L.cw - tw) / 2, oy = (L.ch - th) / 2;
@@ -892,13 +920,8 @@
     c.clearRect(0, 0, L.cw, L.ch);
     const R = G.reveal, rt = R ? t - R.t0 : 0;
     // Tablett: Mörtelbett
-    rr(c, 0.5, 0.5, L.cw - 1, L.ch - 1, s * 0.42);
-    c.fillStyle = mortarPattern(c); c.fill();
-    const tg = c.createLinearGradient(0, 0, 0, L.ch);
-    tg.addColorStop(0, "rgba(255,255,255,.04)"); tg.addColorStop(1, "rgba(0,0,0,.25)");
-    c.fillStyle = tg; c.fill();
-    if (R) { c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
-    c.strokeStyle = "rgba(255,255,255,.08)"; c.lineWidth = 1; c.stroke();
+    if (L.tray) c.drawImage(L.tray, 0, 0, L.cw, L.ch);
+    if (R) { rr(c, 0, 0, L.cw, L.ch, s * 0.42); c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
     geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4600;
     const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
@@ -973,15 +996,17 @@
       }
     }
     G.gems = gems;
+    // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
+    if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
     // Tipp
     if (G.hint && !R) {
       busy = true;
       const pulse = 0.5 + 0.5 * Math.sin(t / 650);
-      if (G.hint.wrong != null) cellFrame(G.hint.wrong, "rgba(255,143,134," + (0.5 + 0.5 * pulse) + ")", 0.09);
+      if (G.hint.wrong != null) cellFrame(G.hint.wrong, "rgba(255,160,170," + (0.5 + 0.5 * pulse) + ")", 0.09);
       else {
-        G.hint.clues.forEach(i => blockFrame(i, "rgba(244,201,107," + (0.45 + 0.4 * pulse) + ")", 0.07));
+        G.hint.clues.forEach(i => blockFrame(i, "rgba(225,228,255," + (0.4 + 0.4 * pulse) + ")", 0.06));
         G.hint.cells.forEach(([x, v]) => { if (G.st[x] < 0) cellFrame(x, v ? "rgba(255,231,168," + (0.35 + 0.6 * pulse) + ")" : "rgba(255,255,255," + (0.25 + 0.5 * pulse) + ")", 0.08, !v); });
       }
     }
@@ -1249,10 +1274,11 @@
 
   // Fertiges Bild über die Karte schieben, damit nichts verdeckt wird.
   function fitBoard(on) {
-    board.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
-    if (!on) { board.style.transform = ""; return; }
+    const sh = $("#boardShadow");
+    board.style.transition = sh.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
+    if (!on) { board.style.transform = sh.style.transform = ""; return; }
     const card = $("#win .card"); if (!card) return;
-    board.style.transform = "";
+    board.style.transform = sh.style.transform = "";
     const b = board.getBoundingClientRect(), cr = card.getBoundingClientRect();
     const top = $(".gbar").getBoundingClientRect().bottom + 6;
     const side = cr.left > b.left + b.width * 0.5;
@@ -1261,7 +1287,7 @@
     if (b.bottom <= bottom && b.right <= right) return;
     const k = Math.min(1, (bottom - top) / b.height, (right - left) / b.width);
     const dy = (top + bottom) / 2 - (b.top + b.height / 2), dx = side ? (left + right) / 2 - (b.left + b.width / 2) : 0;
-    board.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + k + ")";
+    board.style.transform = sh.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + k + ")";
   }
 
   /* ---------- Galerie ---------- */
@@ -1307,7 +1333,7 @@
   function openView(p) {
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
-      <p style="color:var(--gold)">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
+      <p style="color:#fff">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
       <div class="acts" style="justify-content:center"><button class="pill" id="vAgain">Noch einmal legen</button><button class="pill primary" id="vClose">Schließen</button></div></div>`);
     drawMosaic(el.querySelector("canvas"), p, 440);
     $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
@@ -1337,7 +1363,7 @@
       c.globalAlpha = 1;
     }
     c.fillStyle = "#ffffff"; c.fillText("6", s * 1.5, s * 1.5);
-    rr(c, 2, 2, s * 3 - 4, s * 3 - 4, s * 0.3); c.strokeStyle = "rgba(244,201,107,.9)"; c.lineWidth = 5; c.stroke();
+    rr(c, 2, 2, s * 3 - 4, s * 3 - 4, s * 0.3); c.strokeStyle = "rgba(225,228,255,.9)"; c.lineWidth = 4; c.stroke();
   }
   $("#btnHelp").onclick = () => { AU.init(); AU.ui(); openHelp(); };
 
@@ -1391,6 +1417,13 @@
   window.addEventListener("pagehide", () => { if (G) saveProg(); persist(true); });
   document.addEventListener("pointerdown", () => AU.init(), { once: true });
   fxSize();
+  (function toolIcons() {
+    const n = 52, mk = (style, col) => { const cv = document.createElement("canvas"); cv.width = cv.height = n; blit(cv.getContext("2d"), sprite(style, col, 34, 2), 9, 9, 34); return cv.toDataURL(); };
+    try {
+      document.documentElement.style.setProperty("--gem-icon", "url(" + mk("glass", "#2fb39a") + ")");
+      document.documentElement.style.setProperty("--hole-icon", "url(" + mk("holeDot", "") + ")");
+    } catch (e) { /* Symbole sind Zierde */ }
+  })();
   renderHome();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
   try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
