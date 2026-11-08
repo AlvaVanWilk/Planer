@@ -123,10 +123,12 @@ wenn man schneller ist als 1,5 Sekunden pro Feld. Es zählt das beste Ergebnis j
 
 **Gemeinschaftswerke**: riesige Szenen (72×48, fast 3.500 Felder), an denen die ganze Familie
 gleichzeitig legt – jederzeit, ohne Warten. Es bleiben nur Steine liegen, die stimmen, darum kann
-sich niemand in die Quere kommen. Was andere legen, erscheint nach ein paar Sekunden mit ihrem
-Namen. Zwei Finger schieben und zoomen, die kleine Karte zeigt das ganze Bild. Ein Fehler kostet
-einen Tropfen (alle 20 Sekunden kommt einer zurück). Ist ein Werk fertig, sehen alle die
-Enthüllung mit der Liste, wer wie viele Steine gelegt hat, und das nächste Werk öffnet sich.
+sich niemand in die Quere kommen; jedes Feld wird von Hand gelegt, auch die leeren. Was andere
+legen, erscheint nach ein paar Sekunden mit ihrem Namen. Jede Person hat 4 eigene
+**Familientropfen**: Ein Fehler kostet einen, jeder verlorene kommt nach 2 Stunden zurück.
+Bewegen mit dem Werkzeug „Schieben“, den Pfeilen am Rand, der Übersichtskarte oder zwei Fingern.
+In der Bestenliste zeigt der Reiter „Gemeinsam“, wer wie viele Steine gelegt und wie viele Fehler
+gemacht hat, mit den Ehrungen Fleißigste Hand, Ruhigste Hand und Schlussstein.
 Der gemeinsame Stand liegt in `mosaik-daten/coop_*.php`. Ohne Webspace legt man allein.
 
 Beim ersten Aufruf legt `api.php` daneben den Ordner `mosaik-daten/` an. Darin liegt je Konto

@@ -14,6 +14,8 @@ const MAX_SAVE_BYTES = 300000;   // Größe eines Spielstands
 const MAX_TOKENS = 12;           // gleichzeitig angemeldete Geräte je Konto
 const LOCK_AFTER = 8;            // Fehlversuche bis zur Sperre
 const LOCK_SECONDS = 300;        // Dauer der Sperre
+const DROPS = 4;                 // Familientropfen je Person im Gemeinschaftswerk
+const DROP_BACK = 7200;          // ein verlorener Tropfen kommt nach 2 Stunden zurück
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -191,6 +193,14 @@ switch ($action) {
     $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
     if (!is_array($c) || ($c['n'] ?? 0) !== $n) $c = ['n' => $n, 'state' => str_repeat('?', $n), 'ver' => 0, 'by' => [], 'recent' => [], 'seen' => [], 'done' => 0];
     $now = time(); $who = $me['name']; $changed = 0;
+    foreach (['miss', 'loss'] as $k) if (!isset($c[$k]) || !is_array($c[$k])) $c[$k] = [];
+    // Tropfen: verlorene Tropfen der letzten 2 Stunden
+    $loss = array_values(array_filter($c['loss'][$who] ?? [], function ($t) use ($now) { return $now - $t < DROP_BACK; }));
+    if (count($loss) >= DROPS) $cells = [];   // keine Tropfen mehr: nur zuschauen
+    $miss = max(0, min(DROPS - count($loss), (int)($in['miss'] ?? 0)));
+    for ($k = 0; $k < $miss; $k++) { $loss[] = $now; }
+    if ($miss) $c['miss'][$who] = ($c['miss'][$who] ?? 0) + $miss;
+    $c['loss'][$who] = $loss;
     foreach ($cells as $cv) {
       if (!is_array($cv) || count($cv) < 2) continue;
       $i = (int)$cv[0]; $v = (int)$cv[1];
@@ -198,14 +208,7 @@ switch ($action) {
       $c['state'][$i] = (string)$v; $changed++;
       $c['by'][$who] = ($c['by'][$who] ?? 0) + 1;
       $c['recent'][] = [$i, $who, $now];
-    }
-    // automatisch aufgedeckte Felder am Schluss: zählen für niemanden
-    $auto = $in['auto'] ?? [];
-    if (is_array($auto) && count($auto) <= 20000) foreach ($auto as $cv) {
-      if (!is_array($cv) || count($cv) < 2) continue;
-      $i = (int)$cv[0]; $v = (int)$cv[1];
-      if ($i < 0 || $i >= $n || ($v !== 0 && $v !== 1) || $c['state'][$i] !== '?') continue;
-      $c['state'][$i] = (string)$v; $changed++;
+      if (strpos($c['state'], '?') === false) $c['last'] = $who;   // Schlussstein
     }
     if ($changed) { $c['ver']++; $c['recent'] = array_slice($c['recent'], -600); }
     if (!$c['done'] && strpos($c['state'], '?') === false) $c['done'] = $now;
@@ -215,7 +218,8 @@ switch ($action) {
     $active = []; foreach ($c['seen'] as $nm => $t) if ($nm !== $who && $now - $t < 40) $active[] = $nm;
     $recent = array_values(array_filter($c['recent'], function ($r) use ($now, $who) { return $r[1] !== $who && $now - $r[2] < 30; }));
     out(['ok' => true, 'ver' => $c['ver'], 'state' => ((int)($in['ver'] ?? -1) !== $c['ver'] || $changed) ? $c['state'] : null,
-      'recent' => $recent, 'active' => $active, 'by' => (object)$c['by'], 'done' => $c['done']]);
+      'recent' => $recent, 'active' => $active, 'by' => (object)$c['by'], 'miss' => (object)$c['miss'], 'last' => $c['last'] ?? '', 'done' => $c['done'],
+      'now' => $now, 'loss' => $loss, 'drops' => DROPS, 'back' => DROP_BACK]);
   }
   case 'coop_list': {
     [$key, $me] = findByToken($in['name'] ?? '', $in['token'] ?? '');
@@ -226,7 +230,7 @@ switch ($action) {
       $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
       if (!is_array($c)) { $res[$id] = ['known' => 0, 'total' => 0, 'done' => 0, 'active' => []]; continue; }
       $active = []; foreach (($c['seen'] ?? []) as $nm => $t) if ($now - $t < 40) $active[] = $nm;
-      $res[$id] = ['known' => $c['n'] - substr_count($c['state'], '?'), 'total' => $c['n'], 'done' => $c['done'] ?? 0, 'active' => $active, 'by' => (object)($c['by'] ?? [])];
+      $res[$id] = ['known' => $c['n'] - substr_count($c['state'], '?'), 'total' => $c['n'], 'done' => $c['done'] ?? 0, 'active' => $active, 'by' => (object)($c['by'] ?? []), 'miss' => (object)($c['miss'] ?? []), 'last' => $c['last'] ?? ''];
     }
     out(['ok' => true, 'list' => (object)$res]);
   }

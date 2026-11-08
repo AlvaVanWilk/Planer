@@ -46,6 +46,7 @@
   <div class="gmain">
     <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas>
       <canvas id="mini" hidden aria-label="Übersichtskarte"></canvas>
+      <div id="edgeArrows" hidden><button id="aUp" class="arr up" aria-label="Nach oben"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button id="aDown" class="arr down" aria-label="Nach unten"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button id="aLeft" class="arr left" aria-label="Nach links"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><button id="aRight" class="arr right" aria-label="Nach rechts"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
       <div id="zoomBox" hidden><button class="ib" id="zIn" aria-label="Näher heran"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="ib" id="zOut" aria-label="Weiter weg"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><button class="ib" id="zAll" aria-label="Ganzes Bild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div>
     </div>
     <div class="toolsWrap">
@@ -55,6 +56,7 @@
         <div class="seg" role="radiogroup" aria-label="Werkzeug">
           <button id="tFill" class="on" role="radio" aria-checked="true"><span class="sw"></span>Füllen</button>
           <button id="tMark" role="radio" aria-checked="false"><span class="sx"></span>Leer</button>
+          <button id="tMove" role="radio" aria-checked="false" hidden><svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5V4a1.5 1.5 0 0 1 3 0v8"/><path d="M14 11V6a1.5 1.5 0 0 1 3 0v7"/><path d="M17 12.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.5-2.7L4 16.5a1.6 1.6 0 0 1 2.5-2L8 16"/></svg>Schieben</button>
         </div>
         <button class="ib" id="tHint" aria-label="Tipp"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="cnt" id="hintCnt"></span></button>
       </footer>

@@ -297,3 +297,23 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .lb.credits li { grid-template-columns: 2.2em 1fr auto; }
 .lb.credits .lbs { display: none; }
 .lb.credits .lbt { white-space: nowrap; }
+
+/* Schieben im Gemeinschaftswerk */
+#edgeArrows[hidden] { display: none !important; }
+.arr { position: absolute; z-index: 3; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(16,12,24,.55); border: 1px solid rgba(255,255,255,.18); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #fff; transition: transform .2s cubic-bezier(.3,1.7,.5,1), background .2s; }
+.arr:active { transform: scale(.88); background: rgba(255,255,255,.18); }
+.arr svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.arr.up { top: 8px; left: 50%; margin-left: -22px; }
+.arr.down { bottom: 8px; left: 50%; margin-left: -22px; }
+.arr.left { left: 8px; top: 50%; margin-top: -22px; }
+.arr.right { right: 8px; top: 50%; margin-top: -22px; }
+#zoomBox { bottom: 64px; }
+.seg #tMove svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* Tabelle der Gemeinschaftswerke */
+.ctab { width: 100%; max-width: 440px; margin: 0 auto 16px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; text-align: left; }
+.ctab th { font-weight: 400; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); padding: 0 10px 6px; text-align: right; }
+.ctab td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: right; vertical-align: top; }
+.ctab td:first-child { text-align: left; }
+.ctab tr.me td { background: rgba(228,224,255,.08); }
+.ctab b { font-weight: 400; color: #fff; margin-right: 6px; }
+.ctab .tag { display: inline-block; margin: 2px 4px 0 0; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; letter-spacing: .06em; color: #1d1830; background: var(--pearl); white-space: nowrap; }

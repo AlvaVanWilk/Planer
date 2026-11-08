@@ -315,6 +315,26 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .lb.credits li { grid-template-columns: 2.2em 1fr auto; }
 .lb.credits .lbs { display: none; }
 .lb.credits .lbt { white-space: nowrap; }
+
+/* Schieben im Gemeinschaftswerk */
+#edgeArrows[hidden] { display: none !important; }
+.arr { position: absolute; z-index: 3; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(16,12,24,.55); border: 1px solid rgba(255,255,255,.18); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #fff; transition: transform .2s cubic-bezier(.3,1.7,.5,1), background .2s; }
+.arr:active { transform: scale(.88); background: rgba(255,255,255,.18); }
+.arr svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.arr.up { top: 8px; left: 50%; margin-left: -22px; }
+.arr.down { bottom: 8px; left: 50%; margin-left: -22px; }
+.arr.left { left: 8px; top: 50%; margin-top: -22px; }
+.arr.right { right: 8px; top: 50%; margin-top: -22px; }
+#zoomBox { bottom: 64px; }
+.seg #tMove svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* Tabelle der Gemeinschaftswerke */
+.ctab { width: 100%; max-width: 440px; margin: 0 auto 16px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; text-align: left; }
+.ctab th { font-weight: 400; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); padding: 0 10px 6px; text-align: right; }
+.ctab td { padding: 8px 10px; border-top: 1px solid var(--line); text-align: right; vertical-align: top; }
+.ctab td:first-child { text-align: left; }
+.ctab tr.me td { background: rgba(228,224,255,.08); }
+.ctab b { font-weight: 400; color: #fff; margin-right: 6px; }
+.ctab .tag { display: inline-block; margin: 2px 4px 0 0; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; letter-spacing: .06em; color: #1d1830; background: var(--pearl); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -353,6 +373,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
   <div class="gmain">
     <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas>
       <canvas id="mini" hidden aria-label="Übersichtskarte"></canvas>
+      <div id="edgeArrows" hidden><button id="aUp" class="arr up" aria-label="Nach oben"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button id="aDown" class="arr down" aria-label="Nach unten"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button id="aLeft" class="arr left" aria-label="Nach links"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><button id="aRight" class="arr right" aria-label="Nach rechts"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div>
       <div id="zoomBox" hidden><button class="ib" id="zIn" aria-label="Näher heran"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button class="ib" id="zOut" aria-label="Weiter weg"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><button class="ib" id="zAll" aria-label="Ganzes Bild"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button></div>
     </div>
     <div class="toolsWrap">
@@ -362,6 +383,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
         <div class="seg" role="radiogroup" aria-label="Werkzeug">
           <button id="tFill" class="on" role="radio" aria-checked="true"><span class="sw"></span>Füllen</button>
           <button id="tMark" role="radio" aria-checked="false"><span class="sx"></span>Leer</button>
+          <button id="tMove" role="radio" aria-checked="false" hidden><svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5V4a1.5 1.5 0 0 1 3 0v8"/><path d="M14 11V6a1.5 1.5 0 0 1 3 0v7"/><path d="M17 12.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.5-2.7L4 16.5a1.6 1.6 0 0 1 2.5-2L8 16"/></svg>Schieben</button>
         </div>
         <button class="ib" id="tHint" aria-label="Tipp"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="cnt" id="hintCnt"></span></button>
       </footer>
@@ -2779,12 +2801,13 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
       anim: new Array(N).fill(null), cs: new Int8Array(N), ct: new Float64Array(N),
       hint: null, done: false, reveal: null, actions: 0, press: -1, lastI: -1, tick: now(), rings: [],
       firstMistake: !mistakes, lives, over: false,
-      coop: pic.coop ? { ver: -1, queue: [], auto: [], glow: new Map(), active: [], by: {}, drops: 5, dropT: now(), wait: 0, colors: {} } : null,
+      coop: pic.coop ? { ver: -1, queue: [], glow: new Map(), active: [], by: {}, miss: {}, last: "", missQ: 0, loss: ((save.coop[pic.id] || {}).loss || []).slice(), off: 0 } : null,
     };
-    if (pic.coop) G.lives = 5;
+    if (pic.coop) G.lives = DROPS;
     $("#game").classList.remove("broken");
     $("#gWorld").textContent = pic.coop ? "Gemeinschaftswerk " + (pic.pi + 1) : pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
     $("#game").classList.toggle("coopgame", !!pic.coop);
+    $("#tMove").hidden = !pic.coop; $("#edgeArrows").hidden = !pic.coop;
     $("#gRiddle").textContent = pic.riddle;
     $("#win").hidden = true; $("#win").innerHTML = "";
     $("#game").classList.remove("won"); board.style.transform = board.style.transition = ""; $("#boardShadow").style.transform = $("#boardShadow").style.transition = "";
@@ -2831,7 +2854,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     const wrap = $("#boardWrap").getBoundingClientRect();
     const { W, H } = G.pic;
     L.cam = !!G.pic.coop;
-    $("#mini").hidden = $("#zoomBox").hidden = !L.cam;
+    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = !L.cam;
     $("#boardShadow").style.display = L.cam ? "none" : "";
     if (L.cam) {
       // Großes Bild: Leinwand = Ausschnitt, die Welt dahinter lässt sich schieben und zoomen
@@ -2962,8 +2985,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
 
   function setTool(t) {
     if (G) G.tool = t;
-    $("#tFill").classList.toggle("on", t === 1); $("#tMark").classList.toggle("on", t === 0);
-    $("#tFill").setAttribute("aria-checked", t === 1); $("#tMark").setAttribute("aria-checked", t === 0);
+    $("#tFill").classList.toggle("on", t === 1); $("#tMark").classList.toggle("on", t === 0); $("#tMove").classList.toggle("on", t === 2);
+    $("#tFill").setAttribute("aria-checked", t === 1); $("#tMark").setAttribute("aria-checked", t === 0); $("#tMove").setAttribute("aria-checked", t === 2);
   }
 
   // Zustand jeder Zahl: 0 offen, 1 erledigt, 2 widersprüchlich
@@ -2993,7 +3016,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     $("#gStars").innerHTML = G.coop ? "" : [0, 1, 2].map(k => '<i class="' + (k < sStars ? "" : "off") + '">★</i>').join("");
     const lv = $("#gLives");
     lv.hidden = !G.zauber;
-    const left = G.coop ? G.coop.drops : Math.max(0, G.lives - G.mistakes);
+    const left = G.coop ? dropsLeft() : Math.max(0, G.lives - G.mistakes);
     if (G.coop) {
       let k = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) k++;
       const act = G.coop.active.filter(n => n !== ACC.name);
@@ -3023,15 +3046,22 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     const st = G.st, sol = G.pic.sol;
     if (G.coop) {
       if (st[i] >= 0) return;
-      if (G.coop.wait > now()) { stroke.dead = true; coopWaitToast(); return; }
+      if (dropsLeft() <= 0) { stroke.dead = true; coopWaitToast(); return; }
       const want = stroke.val;
-      st[i] = sol[i]; G.coop.queue.push([i, sol[i]]);
       if (sol[i] !== want) {
+        // Fehler: Feld bleibt offen, ein eigener Familientropfen geht verloren
         G.anim[i] = { t: now(), k: "wrong", from: -1 }; stroke.dead = true; AU.oops();
-        G.coop.drops--; G.coop.dropT = now();
-        if (G.coop.drops <= 0) { G.coop.wait = now() + 30000; coopWaitToast(); }
-        else toast("Das passt nicht. Noch <b>" + G.coop.drops + "</b> " + (G.coop.drops === 1 ? "Tropfen" : "Tropfen") + ", alle 20 Sekunden kommt einer zurück.", 3400);
-      } else { G.anim[i] = { t: now(), k: want ? "fill" : "mark", from: -1 }; if (want) { AU.hit(); glowAt(i, G.pic.col[i]); } else AU.empty(); }
+        G.coop.loss.push(srvNow()); G.coop.missQ++; stroke.lost = (stroke.lost || 0) + 1;
+        if (!coopOnline()) { const cs = save.coop[G.pic.id] = save.coop[G.pic.id] || {}; cs.missTotal = (cs.missTotal || 0) + 1; }
+        save.coop[G.pic.id] = Object.assign(save.coop[G.pic.id] || {}, { loss: G.coop.loss.slice() }); persist();
+        const l = dropsLeft();
+        if (l <= 0) coopWaitToast();
+        else toast("Das passt nicht. Du hast noch <b>" + l + "</b> " + (l === 1 ? "Familientropfen" : "Familientropfen") + ". Jeder verlorene kommt nach 2 Stunden zurück.", 4200);
+        coopFlushSoon();
+      } else {
+        st[i] = want; G.coop.queue.push([i, want]); if (stroke.ch) stroke.ch.push([i, -1, want]);
+        G.anim[i] = { t: now(), k: want ? "fill" : "mark", from: -1 }; if (want) { AU.hit(); glowAt(i, G.pic.col[i]); } else AU.empty();
+      }
       G.lastI = i; G.actions++; hud(); return;
     }
     if (G.zauber) {
@@ -3063,7 +3093,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   function afterChange() {
     clueStates(false);
     if (G.coop) { miniLater(); coopFlushSoon(); G.snapDirty = true; }
-    if (G.zauber && save.set.auto) autoEmpty();
+    if (G.zauber && save.set.auto && !G.coop) autoEmpty();
     if (G.hint && G.hint.cells && G.hint.cells.every(([x]) => G.st[x] >= 0)) G.hint = null;
     if (G.hint && G.hint.wrong != null && G.st[G.hint.wrong] === G.pic.sol[G.hint.wrong]) G.hint = null;
     hud();
@@ -3095,6 +3125,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   function checkWin() {
     if (G.done || G.over) return;
     const { sol } = G.pic, st = G.st;
+    if (G.coop) { for (let i = 0; i < G.N; i++) if (st[i] < 0) return; win(); return; }   // gemeinsam: jedes Feld von Hand
     if (G.zauber) {
       let f = 0; for (let i = 0; i < G.N; i++) if (st[i] === 1) f++;
       if (f < G.pic.nFill) return;
@@ -3107,7 +3138,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   /* ---------- Eingabe ---------- */
   const ptrs = new Map();
   let stroke = null, twoTap = null, holdTimer = 0;
-  const HOLD = 380;
+  const HOLD = 380, GRACE = 160;
 
   board.addEventListener("pointerdown", e => {
     AU.init();
@@ -3117,12 +3148,13 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     if (G.done) { if (!G.reveal || now() - G.reveal.t0 > 2600) showCard(true); return; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: now() });
     if (L.cam && ptrs.size === 2) {
-      // zwei Finger: schieben und zoomen
+      // zwei Finger: schieben und zoomen. Was der erste Finger eben gelegt hat, wird zurückgenommen.
       clearTimeout(holdTimer);
-      if (stroke && stroke.pending) stroke = null;
+      if (stroke && !stroke.pending && G.coop && now() - stroke.t0 < 500) coopUndoStroke(stroke);
+      if (stroke) stroke = null;
       const [a, b] = [...ptrs.values()], r = board.getBoundingClientRect();
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      G.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: L.z, wx: (mx - r.left) / L.z + L.cx, wy: (my - r.top) / L.z + L.cy };
+      G.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: L.z, wx: (mx - r.left) / L.z + L.cx, wy: (my - r.top) / L.z + L.cy }; G.pinchSeen = now();
       return;
     }
     if (L.cam && ptrs.size === 1 && (e.button === 1 || spaceDown)) {
@@ -3139,11 +3171,11 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     if (ptrs.size > 2) return;
     try { board.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     const i = cellAt(e.clientX, e.clientY);
-    if (i < 0) {
-      if (L.cam) { G.pan = { x: e.clientX, y: e.clientY, cx: L.cx, cy: L.cy }; }   // Rand: schieben
+    if (i < 0 || (L.cam && G.tool === 2)) {
+      if (L.cam) { G.pan = { x: e.clientX, y: e.clientY, cx: L.cx, cy: L.cy }; }   // Schieben-Werkzeug oder Rand
       return;
     }
-    if (G.coop && G.coop.wait > now()) { coopWaitToast(); return; }
+    if (G.coop && dropsLeft() <= 0 && G.tool !== 2) { coopWaitToast(); return; }
     G.press = i;
     clearTimeout(holdTimer);
     // Maus und Stift: linke Taste = Werkzeug, rechte Taste = leer. Sofort anwenden.
@@ -3154,7 +3186,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
       return;
     }
     // Finger: kurz tippen = Werkzeug, gedrückt halten = leer markieren, ziehen = malen
-    stroke = { id: e.pointerId, val: G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true, axis: null };
+    stroke = { id: e.pointerId, val: G.tool === 2 ? 1 : G.tool, action: !G.zauber && G.st[i] === G.tool ? "clear" : "set", last: i, start: i, ch: [], t0: now(), dead: false, pending: true, axis: null };
     holdTimer = setTimeout(() => holdEmpty(stroke), HOLD);
     kick();
   });
@@ -3198,6 +3230,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     }
     i = stroke.axis === "row" ? sr * Wd + (i % Wd) : Math.floor(i / Wd) * Wd + sc;
     if (i === stroke.last) return;
+    if (stroke.pending && L.cam && now() - stroke.t0 < GRACE) return;
     if (stroke.pending) { commitStart(stroke); if (!stroke || stroke.dead) return; }
     const W = G.pic.W;
     let r0 = Math.floor(stroke.last / W), c0 = stroke.last % W;
@@ -3218,7 +3251,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     if (twoTap && ptrs.size === 0) { if (now() - twoTap.t < 450) undo(); twoTap = null; }
     if (stroke && e.pointerId === stroke.id) {
       clearTimeout(holdTimer);
-      if (stroke.pending && G && !G.done && !G.over) commitStart(stroke);
+      if (stroke.pending && G && !G.done && !G.over && !(L.cam && G.pinchSeen && now() - G.pinchSeen < 400)) commitStart(stroke);
       if (stroke && stroke.ch.length && !G.zauber) { G.undo.push(stroke.ch); G.redo = []; }
       stroke = null;
       if (G) { G.press = -1; hud(); kick(); }
@@ -3281,6 +3314,11 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
 
   $("#tFill").onclick = () => { AU.init(); AU.ui(); setTool(1); };
   $("#tMark").onclick = () => { AU.init(); AU.ui(); setTool(0); };
+  $("#tMove").onclick = () => { AU.init(); AU.ui(); setTool(2); };
+  // Pfeile am Rand: ein großes Stück weiterschieben
+  const nudge = (dx, dy) => { if (!G || !L.cam) return; AU.ui(); L.cx += dx * L.cw * 0.6 / L.z; L.cy += dy * L.ch * 0.6 / L.z; clampCam(); camMoved(); };
+  $("#aUp").onclick = () => nudge(0, -1); $("#aDown").onclick = () => nudge(0, 1);
+  $("#aLeft").onclick = () => nudge(-1, 0); $("#aRight").onclick = () => nudge(1, 0);
   $("#tUndo").onclick = () => { AU.init(); undo(); };
   $("#tHint").onclick = () => { AU.init(); hint(); };
   $("#gBack").onclick = () => { AU.ui(); leaveGame(); };
@@ -3672,35 +3710,50 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   const nameColor = n => NAMECOLS[[...String(n)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % NAMECOLS.length];
   let coopTimer = 0, coopFlushT = 0, coopBusy = false;
   const coopOnline = () => ACC.online && !!ACC.token;
+  const DROPS = 4, DROP_BACK = 7200;
+  const srvNow = () => Math.floor(Date.now() / 1000) + ((G && G.coop && G.coop.off) || 0);
+  function dropsLeft() {
+    if (!G || !G.coop) return DROPS;
+    const t = srvNow(); G.coop.loss = G.coop.loss.filter(x => t - x < DROP_BACK);
+    return Math.max(0, DROPS - G.coop.loss.length);
+  }
   function coopStart() {
     clearInterval(coopTimer);
     coopTimer = setInterval(() => {
       if (!G || !G.coop) return;
-      // Tropfen füllen sich nach
-      const c = G.coop;
-      if (c.drops < 5 && now() - c.dropT > 20000) { c.drops++; c.dropT = now(); if (c.drops > 0) c.wait = 0; hud(); }
+      hud();
       if (!document.hidden && screen === "game") coopSync();
     }, 3500);
     coopSync();
   }
   function coopStop(flushNow) {
     clearInterval(coopTimer); coopTimer = 0; clearTimeout(coopFlushT);
-    if (flushNow && G && G.coop && (G.coop.queue.length || G.coop.auto.length)) coopSync();
+    if (flushNow && G && G.coop && (G.coop.queue.length || G.coop.missQ)) coopSync();
   }
   function coopFlushSoon() { clearTimeout(coopFlushT); coopFlushT = setTimeout(coopSync, 1200); }
+  function coopUndoStroke(sk) {
+    const c = G.coop;
+    for (const [i] of sk.ch || []) { G.st[i] = -1; G.anim[i] = null; const k = c.queue.findIndex(q => q[0] === i); if (k >= 0) c.queue.splice(k, 1); }
+    for (let k = 0; k < (sk.lost || 0); k++) { c.loss.pop(); if (c.missQ > 0) c.missQ--; }
+    save.coop[G.pic.id] = Object.assign(save.coop[G.pic.id] || {}, { loss: c.loss.slice() });
+    G.snapDirty = true; clueStates(false); saveProg(); hud(); kick();
+  }
   function coopWaitToast() {
-    const s = Math.max(1, Math.ceil(((G && G.coop && G.coop.wait) || 0) - now()) / 1000 | 0);
-    toast("Kurze Pause: Das Glas muss abkühlen. Noch <b>" + s + " s</b>, dann geht es weiter.", 3000);
+    if (!G || !G.coop) return;
+    const back = Math.min(...G.coop.loss) + DROP_BACK, d = new Date((back - G.coop.off) * 1000);
+    const hm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    toast("Deine Familientropfen sind aufgebraucht. Um <b>" + hm + " Uhr</b> kommt der nächste zurück. Bis dahin kannst du zuschauen und schieben.", 5200);
   }
   async function coopSync() {
     if (!G || !G.coop || coopBusy || !coopOnline()) return;
-    const g = G, c = g.coop, cells = c.queue.splice(0, 5000), auto = c.auto.splice(0, 5000);
-    coopBusy = true;
-    const j = await api({ action: "coop", name: ACC.name, token: ACC.token, id: g.pic.id, n: g.N, ver: c.ver, cells, auto });
+    const g = G, c = g.coop, cells = c.queue.splice(0, 5000), miss = c.missQ;
+    c.missQ = 0; coopBusy = true;
+    const j = await api({ action: "coop", name: ACC.name, token: ACC.token, id: g.pic.id, n: g.N, ver: c.ver, cells, miss });
     coopBusy = false;
-    if (!j.ok) { c.queue.unshift(...cells); c.auto.unshift(...auto); if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (!j.ok) { c.queue.unshift(...cells); c.missQ += miss; if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
     if (G !== g) return;
-    c.ver = j.ver; c.active = j.active || []; c.by = j.by || {};
+    c.ver = j.ver; c.active = j.active || []; c.by = j.by || {}; c.miss = j.miss || {}; c.last = j.last || "";
+    if (j.now) { c.off = j.now - Math.floor(Date.now() / 1000); c.loss = (j.loss || []).slice(); save.coop[g.pic.id] = Object.assign(save.coop[g.pic.id] || {}, { loss: c.loss.slice() }); }
     if (j.state) coopMerge(j.state, j.recent || []);
     hud();
   }
@@ -3727,15 +3780,15 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     for (let i = 0; i < G.N; i++) d[i] = Math.hypot(Math.floor(i / W) - lr, (i % W) - lq) * 22 + Math.random() * 80;
     L.z = L.zMin; clampCam(); L.SS = 0; wantSprites(); drawMini(true);
     G.reveal = { t0: now() + 400, d };
-    save.coopDone[pic.id] = { date: new Date().toISOString().slice(0, 10), by: Object.assign({}, c.by) };
-    if (!coopOnline()) { let k = 0; for (const ch of (save.coop[pic.id] || {}).st || "") if (ch !== "?") k++; save.coopDone[pic.id].by = { [ACC.name || "Du"]: pic.N }; }
+    save.coopDone[pic.id] = { date: new Date().toISOString().slice(0, 10), by: Object.assign({}, c.by), miss: Object.assign({}, c.miss), last: c.last || ACC.name || "Du" };
+    if (!coopOnline()) { const me = ACC.name || "Du"; save.coopDone[pic.id].by = { [me]: pic.N }; save.coopDone[pic.id].miss = { [me]: ((save.coop[pic.id] || {}).missTotal) || 0 }; save.coopDone[pic.id].last = me; }
     persist(true);
     const glow = $("#glow");
     glow.style.background = "radial-gradient(60% 50% at 50% 45%, " + pic.avg + ", transparent 70%)";
     setTimeout(() => { glow.style.opacity = 0.45; }, 600);
     setTimeout(() => AU.reveal(3.2), 400);
     G.result = { coop: true };
-    setTimeout(() => { if (G && G.pic === pic) { if (coopOnline()) coopSync().then(() => { if (G && G.pic === pic) { save.coopDone[pic.id].by = Object.assign({}, G.coop.by); persist(); showCard(true); } }); else showCard(true); } }, 4600);
+    setTimeout(() => { if (G && G.pic === pic) { if (coopOnline()) coopSync().then(() => { if (G && G.pic === pic) { Object.assign(save.coopDone[pic.id], { by: Object.assign({}, G.coop.by), miss: Object.assign({}, G.coop.miss), last: G.coop.last || save.coopDone[pic.id].last }); persist(); showCard(true); } }); else showCard(true); } }, 4600);
     kick();
   }
   function camFitAboveCard() {
@@ -3745,17 +3798,27 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     const aw = side ? cr.left - wr.left - 16 : wr.width, ah = side ? wr.height : cr.top - wr.top - 12;
     L.z = Math.min(aw / L.wW, ah / L.wH) * 0.98;
     L.cx = L.wW / 2 - (aw / 2) / L.z; L.cy = L.wH / 2 - (ah / 2) / L.z;
-    $("#mini").hidden = $("#zoomBox").hidden = true;
+    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = true;
     L.SS = 0; wantSprites(); kick();
   }
+  // Ehrungen: fleißigste Hand, ruhigste Hand (ab 50 Steinen), Schlussstein
+  function coopTable(by, miss, last) {
+    const rows = Object.keys(Object.assign({}, by, miss)).map(n => ({ n, k: (by && by[n]) || 0, m: (miss && miss[n]) || 0 })).sort((a, b) => b.k - a.k || a.m - b.m);
+    if (!rows.length) return "";
+    const most = rows[0].k > 0 ? rows[0].n : "";
+    const calm = rows.filter(r => r.k >= 50).sort((a, b) => a.m / a.k - b.m / b.k)[0];
+    const tags = n => [n === most ? "Fleißigste Hand" : "", calm && n === calm.n ? "Ruhigste Hand" : "", n === last ? "Schlussstein" : ""].filter(Boolean);
+    return `<table class="ctab"><thead><tr><th></th><th>Steine</th><th>Fehler</th></tr></thead><tbody>${rows.map(r => `<tr class="${r.n === ACC.name ? "me" : ""}"><td><b>${esc(r.n)}</b>${tags(r.n).map(t => `<span class="tag">${t}</span>`).join("")}</td><td>${r.k}</td><td>${r.m}</td></tr>`).join("")}</tbody></table>`;
+  }
   function coopCardHtml(pic) {
-    const by = Object.entries((save.coopDone[pic.id] || {}).by || {}).sort((a, b) => b[1] - a[1]);
+    const rec = save.coopDone[pic.id] || {};
+    const by = Object.entries(rec.by || {});
     const nxt = COOP.list[pic.pi + 1];
     return `<div class="card">
       <div class="kick">Gemeinschaftswerk ${pic.pi + 1} · vollendet</div>
       <h3>${pic.title}</h3>
       <p class="verse">${pic.verse}</p>
-      ${by.length ? `<div class="lbh" style="margin-top:14px">Gelegt von</div><ol class="lb credits" style="max-width:380px;margin:0 auto 16px">${by.map(([n, k], j) => `<li class="${n === ACC.name ? "me" : ""}"><span class="lbr">${j + 1}.</span><span class="lbn">${esc(n)}</span><span class="lbs"></span><span class="lbt">${k} Steine</span></li>`).join("")}</ol>` : ""}
+      ${by.length ? `<div class="lbh" style="margin-top:14px">Gelegt von</div>${coopTable(rec.by, rec.miss, rec.last)}` : ""}
       ${nxt ? `<div class="rankup">Das nächste Gemeinschaftswerk ist jetzt offen.</div>` : ""}
       <div class="row">
         <button class="pill" id="wLook">Bild ansehen</button>
@@ -3766,8 +3829,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   function openCoopHelp() {
     const el = openSheet(`<h2>Gemeinsam legen</h2>
       <p>Dieses Mosaik ist riesig: ${G ? G.pic.W + "×" + G.pic.H : "72×48"} Felder. Alle aus der Familie legen am <b>selben Bild</b>, jederzeit und gleichzeitig. Was andere legen, erscheint nach ein paar Sekunden auch bei dir, kurz leuchtend mit ihrem Namen.</p>
-      <p>Es bleiben nur Steine liegen, die stimmen. Darum kann niemand etwas kaputt machen. Ein Fehler kostet einen <b>Tropfen</b>; alle 20 Sekunden kommt einer zurück.</p>
-      <p><b>Zwei Finger</b> schieben und zoomen, <b>ein Finger</b> legt Steine. Die kleine <b>Karte</b> zeigt das ganze Bild – tippe darauf, um hinzuspringen. Am Computer: Mausrad schiebt, Strg + Mausrad zoomt.</p>
+      <p>Es bleiben nur Steine liegen, die stimmen, darum kann niemand etwas kaputt machen. Jedes Feld wird von Hand gelegt, auch die leeren. Jede Person hat <b>4 eigene Familientropfen</b>: Ein Fehler kostet einen, und jeder verlorene kommt nach <b>2 Stunden</b> zurück. Ohne Tropfen kann man zuschauen und schieben.</p>
+      <p>Zum Bewegen: das Werkzeug <b>Schieben</b> (die Hand), die <b>Pfeile</b> am Rand, die kleine <b>Karte</b> unten links oder <b>zwei Finger</b> zum Schieben und Zoomen. Am Computer: Mausrad schiebt, Strg + Mausrad zoomt.</p>
       <div class="acts"><button class="pill primary" id="chClose">Los geht's</button></div>`);
     $("#chClose").onclick = () => { AU.ui(); closeSheet(); };
   }
@@ -3776,7 +3839,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   function win() {
     const pic = G.pic, t = now();
     G.done = true; G.hint = null; stroke = null; 
-    for (let i = 0; i < G.N; i++) if (G.st[i] < 0) { G.st[i] = pic.sol[i]; if (G.coop) G.coop.auto.push([i, pic.sol[i]]); }
+    if (!G.coop) for (let i = 0; i < G.N; i++) if (G.st[i] < 0) G.st[i] = pic.sol[i];
     if (G.coop) return coopWin();
     const W = pic.W, li = G.lastI >= 0 ? G.lastI : 0, lr = Math.floor(li / W), lq = li % W;
     const d = new Float32Array(G.N);
@@ -3865,7 +3928,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
 
   function showCard(on) {
     const box = $("#win");
-    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); if (L.cam) { $("#mini").hidden = $("#zoomBox").hidden = false; L.z = L.zMin; clampCam(); camMoved(); } return; }
+    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); if (L.cam) { $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = false; L.z = L.zMin; clampCam(); camMoved(); } return; }
     if (!G || !G.result) return;
     if (G.result.coop) {
       const pic = G.pic, nxt = COOP.list[pic.pi + 1];
@@ -3974,6 +4037,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
     return j.ok ? j.users : null;
   }
   async function openScores() {
+    refreshCoopList();
     renderScores(true);
     show("scores");
     family = await loadFamily();
@@ -3991,13 +4055,22 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   }
   function renderScores(loading) {
     const tabs = $("#scTabs"), body = $("#scBody");
-    tabs.innerHTML = [["gesamt", "Gesamt"]].concat(WORLDS.filter(w => !w.coop).map(w => [w.id, w.name])).map(([id, n]) => `<button data-t="${id}" class="${id === scoreTab ? "on" : ""}">${n}</button>`).join("");
+    tabs.innerHTML = [["gesamt", "Gesamt"]].concat(WORLDS.filter(w => !w.coop).map(w => [w.id, w.name])).concat(COOP ? [["gemeinsam", "Gemeinsam"]] : []).map(([id, n]) => `<button data-t="${id}" class="${id === scoreTab ? "on" : ""}">${n}</button>`).join("");
     tabs.querySelectorAll("button").forEach(b => b.onclick = () => { AU.ui(); scoreTab = b.dataset.t; renderScores(false); });
     const list = players();
     const solo = !(family && family.length);
     let html = "";
     if (loading && ACC.online && ACC.token) html += '<p class="lbw">Bestenliste wird geladen …</p>';
-    if (scoreTab === "gesamt") {
+    if (scoreTab === "gemeinsam") {
+      html += '<div class="scgrid">' + COOP.list.filter(p => coopOpen(p)).map(p => {
+        const live = coopList && coopList[p.id], rec = save.coopDone[p.id];
+        const by = (live && live.by) || (rec && rec.by) || {}, miss = (live && live.miss) || (rec && rec.miss) || {}, last = (live && live.last) || (rec && rec.last) || "";
+        const done = coopDone(p), k = Math.floor(coopKnown(p) * 100);
+        return `<article class="sccard"><div class="schead">${done ? `<canvas data-id="${p.id}"></canvas>` : `<div class="scq">${p.pi + 1}</div>`}<div><b>${done ? p.title : "Gemeinschaftswerk " + (p.pi + 1)}</b><small>${done ? "vollendet" : k + " % gelegt"}</small></div></div>
+          ${coopTable(by, miss, done ? last : "") || '<p class="lbw">Noch hat niemand hier gelegt.</p>'}</article>`;
+      }).join("") + "</div>";
+      if (!(ACC.online && ACC.token)) html += '<p class="lbnote">Mit Konten auf dem eigenen Webspace erscheint hier die ganze Familie.</p>';
+    } else if (scoreTab === "gesamt") {
       const rows = list.map(u => ({ name: u.name, me: u.me, pts: totalPoints(u.solved), stars: Object.values(u.solved || {}).reduce((t, r) => t + (r.stars || 0), 0), n: Object.keys(u.solved || {}).filter(id => byId(id)).length }))
         .sort((a, b) => b.pts - a.pts || b.stars - a.stars);
       html += `<ol class="lb big">${rows.map((r, k) => `<li class="${r.me ? "me" : ""}"><span class="lbr">${k + 1}.</span><span class="lbn">${esc(r.name)}</span><span class="lbx">${r.n} ${r.n === 1 ? "Bild" : "Bilder"} · ${r.stars} ★</span><span class="lbp">${r.pts.toLocaleString("de-DE")}</span></li>`).join("")}</ol>`;
@@ -4097,9 +4170,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":"0012332.00013566531.13689.86.125899998...7
   function openView(p) {
     if (p.coop) {
       const rec = save.coopDone[p.id] || {};
-      const names = Object.entries(rec.by || {}).sort((a, b) => b[1] - a[1]);
       const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
-        ${names.length ? `<ol class="lb credits">${names.map(([n, k], j) => `<li class="${n === ACC.name ? "me" : ""}"><span class="lbr">${j + 1}.</span><span class="lbn">${esc(n)}</span><span class="lbs"></span><span class="lbt">${k}</span></li>`).join("")}</ol>` : ""}
+        ${coopTable(rec.by, rec.miss, rec.last)}
         <div class="acts" style="justify-content:center"><button class="pill primary" id="vClose">Schließen</button></div></div>`);
       drawMosaic(el.querySelector("canvas"), p, 440);
       $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
