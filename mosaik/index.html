@@ -15,7 +15,7 @@
 <meta name="theme-color" content="#0f0d17">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gloock&family=Poiret+One&family=Lexend:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poiret+One&family=Lexend:wght@300;400;500;600&display=swap">
 <style>/* Layout: ein Bildschirm pro Ansicht; das Brett füllt die Mitte, Werkzeuge unten (quer: rechts). */
 :root {
   --deep: #0f0d17;
@@ -25,13 +25,14 @@
   --line: rgba(243, 238, 230, 0.12);
   --glass: rgba(255, 255, 255, 0.055);
   --glass2: rgba(255, 255, 255, 0.1);
-  --gold: #f4c96b;
-  --gold2: #ffe7a8;
+  --gold: #e4e0ff;
+  --gold2: #ffffff;
+  --pearl: linear-gradient(115deg, #ffffff 0%, #e6e9ff 35%, #ffe8f4 62%, #e4fbf6 100%);
   --rose: #ff8f86;
   --wa: #2c3b2a;
   --wb: #16201a;
   --wc: #b9e08f;
-  --display: "Gloock", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --display: "Poiret One", "Avenir Next", "Helvetica Neue", sans-serif;
   --ui: "Lexend", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
 }
@@ -50,7 +51,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .blob { position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(60px); opacity: 0.22; transition: background 1.4s ease; }
 .b1 { background: var(--wc); left: -25vmax; top: -30vmax; animation: drift1 38s ease-in-out infinite alternate; }
 .b2 { background: var(--wa); right: -30vmax; bottom: -35vmax; opacity: 0.5; animation: drift2 46s ease-in-out infinite alternate; }
-.b3 { background: var(--gold); left: 30vw; top: 55vh; width: 40vmax; height: 40vmax; opacity: 0.06; animation: drift1 52s ease-in-out infinite alternate-reverse; }
+.b3 { background: #c9c2ff; left: 30vw; top: 55vh; width: 40vmax; height: 40vmax; opacity: 0.06; animation: drift1 52s ease-in-out infinite alternate-reverse; }
 @keyframes drift1 { to { transform: translate(14vmax, 10vmax) scale(1.15); } }
 @keyframes drift2 { to { transform: translate(-12vmax, -8vmax) scale(0.9); } }
 .grain { position: absolute; inset: 0; opacity: 0.35; mix-blend-mode: overlay; pointer-events: none;
@@ -74,8 +75,8 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .wrap { max-width: 980px; margin: 0 auto; }
 .hero { text-align: center; padding: 46px 0 10px; }
 #logoTiles { width: 252px; height: 36px; display: block; margin: 0 auto 14px; }
-.hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(56px, 11vw, 92px); line-height: .95; margin: 0; letter-spacing: .01em;
-  background: linear-gradient(180deg, #fff8ec, #e9cf9a); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(60px, 12vw, 104px); line-height: .95; margin: 0; letter-spacing: .06em;
+  background: linear-gradient(170deg, #ffffff 20%, #dcd8ff 55%, #ffd9ee 75%, #d6fff4); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero .tag { margin: 12px 0 0; color: var(--muted); font-size: 15px; letter-spacing: .04em; }
 .rank { margin: 26px auto 0; max-width: 420px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
   padding: 12px 16px; border-radius: 18px; background: var(--glass); border: 1px solid var(--line); }
@@ -83,7 +84,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .rank .rn small { display: block; font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--faint); }
 .rank .rn b { font-family: var(--display); font-weight: 400; font-size: 20px; }
 .rank .bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,.08); overflow: hidden; }
-.rank .bar i { display: block; height: 100%; width: 0; border-radius: 6px; background: linear-gradient(90deg, var(--gold), var(--gold2)); transition: width 1s cubic-bezier(.2,.8,.2,1); }
+.rank .bar i { display: block; height: 100%; width: 0; border-radius: 6px; background: var(--pearl); transition: width 1s cubic-bezier(.2,.8,.2,1); }
 .rank .sc { font-variant-numeric: tabular-nums; color: var(--gold); font-weight: 400; white-space: nowrap; }
 
 #worlds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 16px; margin-top: 34px; }
@@ -91,7 +92,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
   background: linear-gradient(160deg, color-mix(in srgb, var(--a) 70%, transparent), color-mix(in srgb, var(--b) 85%, transparent)); }
 .world::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(80% 60% at 100% 0%, color-mix(in srgb, var(--c) 22%, transparent), transparent 70%); }
 .world header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; position: relative; z-index: 1; }
-.world h2 { font-family: var(--display); font-weight: 400; font-size: 27px; margin: 0; }
+.world h2 { font-family: var(--display); font-weight: 400; font-size: 30px; margin: 0; letter-spacing: .03em; }
 .world .meta { font-size: 12px; color: var(--muted); letter-spacing: .06em; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .world p { margin: 4px 0 16px; color: var(--muted); font-size: 14px; position: relative; z-index: 1; }
 .thumbs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; position: relative; z-index: 1; }
@@ -113,35 +114,35 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .pill { display: inline-flex; align-items: center; gap: 9px; padding: 13px 20px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line);
   font-size: 15px; font-weight: 400; transition: transform .2s cubic-bezier(.3,1.7,.5,1), background .2s; }
 .pill:active { transform: scale(.94); background: var(--glass2); }
-.pill.primary { background: linear-gradient(180deg, #ffe3a0, #e9b45a); color: #2a1c08; border-color: transparent; font-weight: 500; box-shadow: 0 8px 30px rgba(244, 201, 107, .25); }
+.pill.primary { background: var(--pearl); color: #1d1830; border-color: rgba(255,255,255,.6); font-weight: 500; box-shadow: 0 10px 34px rgba(200, 205, 255, .28), inset 0 1px 0 rgba(255,255,255,.9); }
 .continue { display: flex; justify-content: center; margin-top: 22px; }
 
 /* ---------- Spiel ---------- */
 .gbar { display: flex; align-items: center; gap: 12px; padding: 12px 0 6px; flex: none; }
 .gtitle { flex: 1; min-width: 0; text-align: center; }
 .gworld { font-size: 11px; letter-spacing: .24em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.griddle { font-family: var(--display); font-size: clamp(16px, 2.4vw, 21px); line-height: 1.3; margin-top: 4px; text-wrap: balance; }
+.griddle { font-family: var(--display); font-size: clamp(18px, 2.7vw, 24px); line-height: 1.3; letter-spacing: .015em; margin-top: 4px; text-wrap: balance; }
 .gstat { width: 96px; flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
-.stars { font-size: 17px; letter-spacing: 2px; color: var(--gold); white-space: nowrap; }
+.stars { font-size: 17px; letter-spacing: 2px; color: #fff; white-space: nowrap; text-shadow: 0 0 10px rgba(200,210,255,.7); }
 .stars i { font-style: normal; transition: opacity .6s, color .6s; display: inline-block; }
 .stars i.off { opacity: .22; color: var(--ink); animation: starLoss .6s ease; }
 @keyframes starLoss { 30% { transform: scale(1.5) rotate(-20deg); } }
 .gprog { width: 96px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
-.gprog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--wc), var(--gold2)); transition: width .4s cubic-bezier(.2,.8,.2,1); }
+.gprog i { display: block; height: 100%; width: 0; background: var(--pearl); transition: width .4s cubic-bezier(.2,.8,.2,1); }
 .gmain { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #boardWrap { flex: 1; min-height: 0; min-width: 0; position: relative; overflow: hidden; touch-action: none; }
 #board { position: absolute; display: block; touch-action: none; border-radius: 18px; }
+#boardShadow { position: absolute; pointer-events: none; box-shadow: 0 34px 70px -18px rgba(0,0,0,.65), 0 10px 24px rgba(0,0,0,.35); }
 .tools { flex: none; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 0 14px; }
 .seg { display: flex; padding: 5px; gap: 5px; border-radius: 22px; background: rgba(0,0,0,.28); border: 1px solid var(--line); }
 .seg button { display: flex; align-items: center; gap: 9px; height: 54px; padding: 0 22px; border-radius: 17px; font-size: 16px; font-weight: 400; color: var(--muted);
   transition: background .25s, color .25s, transform .2s cubic-bezier(.3,1.7,.5,1); }
 .seg button:active { transform: scale(.93); }
 .seg button.on { background: var(--ink); color: #1a1622; box-shadow: 0 6px 22px rgba(0,0,0,.35); }
-.seg .sw { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #ffd27a, #e8414f 55%, #7a4fc8); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); }
-.seg .sx { width: 20px; height: 20px; border-radius: 6px; border: 1.5px dashed currentColor; display: grid; place-items: center; }
-.seg .sx::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.seg .sw { width: 26px; height: 26px; background: var(--gem-icon) center / contain no-repeat; }
+.seg .sx { width: 26px; height: 26px; background: var(--hole-icon) center / contain no-repeat; }
 #tHint { position: relative; }
-#tHint .cnt { position: absolute; right: -4px; top: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--gold); color: #2a1c08; font-size: 11px; font-weight: 500; display: none; place-items: center; padding: 0 4px; }
+#tHint .cnt { position: absolute; right: -4px; top: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--pearl); color: #1d1830; font-size: 11px; font-weight: 500; display: none; place-items: center; padding: 0 4px; }
 .toast { position: absolute; left: 50%; bottom: 100%; transform: translate(-50%, 8px); width: max-content; max-width: min(520px, 90vw);
   padding: 12px 18px; border-radius: 16px; background: rgba(20, 16, 30, .82); border: 1px solid var(--line); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   font-size: 15px; line-height: 1.45; text-align: center; opacity: 0; pointer-events: none; transition: opacity .35s, transform .35s cubic-bezier(.2,.8,.2,1); z-index: 5; }
@@ -168,16 +169,16 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
   box-shadow: 0 30px 80px rgba(0,0,0,.5); animation: cardIn .9s cubic-bezier(.16,1,.3,1) both; }
 @keyframes cardIn { from { opacity: 0; transform: translateY(60px) scale(.96); } }
 .card .kick { font-size: 11px; letter-spacing: .26em; text-transform: uppercase; color: var(--gold); }
-.card h3 { font-family: var(--display); font-weight: 400; font-size: clamp(32px, 6vw, 44px); margin: 6px 0 6px; line-height: 1.05; text-wrap: balance; }
+.card h3 { font-family: var(--display); font-weight: 400; font-size: clamp(36px, 7vw, 52px); letter-spacing: .03em; margin: 6px 0 6px; line-height: 1.05; text-wrap: balance; }
 .card .verse { margin: 0 auto; max-width: 420px; color: var(--muted); font-size: 15.5px; line-height: 1.5; text-wrap: balance; }
-.card .bigstars { font-size: 34px; letter-spacing: 8px; margin: 14px 0 4px; color: var(--gold); }
+.card .bigstars { font-size: 34px; letter-spacing: 8px; margin: 14px 0 4px; color: #fff; text-shadow: 0 0 18px rgba(200,210,255,.8), 0 0 4px rgba(255,220,240,.6); }
 .card .bigstars i { font-style: normal; display: inline-block; opacity: 0; transform: scale(.2) rotate(-40deg); }
 .card .bigstars i.in { animation: starIn .6s cubic-bezier(.3,1.8,.5,1) forwards; }
 .card .bigstars i.dim { color: rgba(255,255,255,.18); }
 @keyframes starIn { to { opacity: 1; transform: none; } }
 .card .facts { display: flex; justify-content: center; gap: 18px; font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; margin-bottom: 18px; }
 .card .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.rankup { margin: 0 0 14px; padding: 9px 14px; border-radius: 14px; background: rgba(244, 201, 107, .12); color: var(--gold2); font-size: 14px; }
+.rankup { margin: 0 0 14px; padding: 9px 14px; border-radius: 14px; background: rgba(228, 224, 255, .1); color: var(--gold2); font-size: 14px; }
 
 @media (orientation: landscape) and (min-width: 900px) {
   #win { left: auto; top: 0; align-items: center; width: clamp(320px, 38vw, 480px); padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 0; }
@@ -214,13 +215,13 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .opt .tx small { color: var(--muted); font-size: 13px; line-height: 1.4; display: block; margin-top: 2px; }
 .tog { width: 54px; height: 32px; border-radius: 16px; background: rgba(255,255,255,.14); position: relative; flex: none; transition: background .25s; }
 .tog::after { content: ""; position: absolute; left: 3px; top: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; transition: transform .3s cubic-bezier(.3,1.5,.5,1); box-shadow: 0 2px 6px rgba(0,0,0,.3); }
-.tog.on { background: var(--gold); }
+.tog.on { background: #b9b2ff; }
 .tog.on::after { transform: translateX(22px); }
 .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 8px; }
 .mode { text-align: left; padding: 14px; border-radius: 18px; border: 1px solid var(--line); background: var(--glass); }
 .mode b { display: block; font-weight: 500; margin-bottom: 4px; }
 .mode small { color: var(--muted); font-size: 13px; line-height: 1.4; }
-.mode.on { border-color: var(--gold); background: rgba(244, 201, 107, .1); }
+.mode.on { border-color: rgba(228,224,255,.7); background: rgba(228, 224, 255, .1); }
 .demo { display: block; margin: 6px auto 14px; width: 230px; height: 230px; max-width: 100%; }
 .view canvas { width: 100%; max-width: 440px; aspect-ratio: 1; display: block; margin: 0 auto 16px; border-radius: 6px; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
 .view { text-align: center; }
@@ -273,7 +274,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
     <div class="gstat"><div class="stars" id="gStars"></div><div class="gprog"><i id="gProg"></i></div></div>
   </header>
   <div class="gmain">
-    <div id="boardWrap"><canvas id="board"></canvas></div>
+    <div id="boardWrap"><div id="boardShadow"></div><canvas id="board"></canvas></div>
     <div class="toolsWrap">
       <div class="toast" id="toast"></div>
       <footer class="tools">
@@ -1979,7 +1980,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     $("#gWorld").textContent = pic.w.name + " · Bild " + (pic.pi + 1) + " von " + pic.w.list.length;
     $("#gRiddle").textContent = pic.riddle;
     $("#win").hidden = true; $("#win").innerHTML = "";
-    $("#game").classList.remove("won"); board.style.transform = ""; board.style.transition = "";
+    $("#game").classList.remove("won"); board.style.transform = board.style.transition = ""; $("#boardShadow").style.transform = $("#boardShadow").style.transition = "";
     $("#glow").style.opacity = 0;
     setTool(1);
     $("#tUndo").style.display = zauber ? "none" : "";
@@ -2021,8 +2022,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     if (!G) return;
     const wrap = $("#boardWrap").getBoundingClientRect();
     const { W, H } = G.pic;
-    const ux = W + (W - 1) * 0.075 + Math.floor((W - 1) / 5) * 0.14 + 0.7;
-    const uy = H + (H - 1) * 0.075 + Math.floor((H - 1) / 5) * 0.14 + 0.7;
+    const ux = W + (W - 1) * 0.08 + 0.7;
+    const uy = H + (H - 1) * 0.08 + 0.7;
     const s = Math.max(10, Math.floor(Math.min((wrap.width - 4) / ux, (wrap.height - 4) / uy, 70)));
     L.s = s; L.cw = Math.round(s * ux); L.ch = Math.round(s * uy);
     L.d = Math.min(3, window.devicePixelRatio || 1);
@@ -2030,11 +2031,39 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     board.style.left = Math.round((wrap.width - L.cw) / 2) + "px"; board.style.top = Math.round((wrap.height - L.ch) / 2) + "px";
     board.width = Math.round(L.cw * L.d); board.height = Math.round(L.ch * L.d);
     geom(1);
+    const sh = $("#boardShadow");
+    Object.assign(sh.style, { left: board.style.left, top: board.style.top, width: L.cw + "px", height: L.ch + "px", borderRadius: Math.round(s * 0.42) + "px" });
+    buildTray();
     fxSize();
     kick();
   }
+  // Tablett (Mörtelbett mit Innenschatten und Lichtkante) und Raumlicht einmal vorab rendern
+  function buildTray() {
+    const d = L.d, W = Math.round(L.cw * d), H = Math.round(L.ch * d), r = L.s * 0.42 * d;
+    const mk = () => { const cv = document.createElement("canvas"); cv.width = W; cv.height = H; return cv; };
+    const tray = L.tray && L.tray.width === W && L.tray.height === H ? L.tray : mk();
+    let c = tray.getContext("2d"); c.clearRect(0, 0, W, H);
+    rr(c, 0, 0, W, H, r); c.fillStyle = mortarPattern(c); c.fill();
+    c.save(); rr(c, 0, 0, W, H, r); c.clip();
+    const tg = c.createLinearGradient(0, 0, 0, H); tg.addColorStop(0, "rgba(255,255,255,.035)"); tg.addColorStop(1, "rgba(0,0,0,.22)");
+    c.fillStyle = tg; c.fillRect(0, 0, W, H);
+    c.shadowColor = "rgba(0,0,0,.85)"; c.shadowBlur = 22 * d; c.shadowOffsetY = 6 * d;
+    c.beginPath(); c.rect(-W, -H, W * 3, H * 3); rr(c, 0, 0, W, H, r); c.fillStyle = "#000"; c.fill("evenodd");
+    c.restore();
+    const rim = c.createLinearGradient(0, 0, 0, H); rim.addColorStop(0, "rgba(255,255,255,.22)"); rim.addColorStop(0.12, "rgba(255,255,255,.05)"); rim.addColorStop(1, "rgba(255,255,255,.03)");
+    rr(c, 0.5 * d, 0.5 * d, W - d, H - d, r); c.lineWidth = 1.2 * d; c.strokeStyle = rim; c.stroke();
+    L.tray = tray;
+    const light = L.light && L.light.width === W && L.light.height === H ? L.light : mk();
+    c = light.getContext("2d"); c.clearRect(0, 0, W, H);
+    c.save(); rr(c, 0, 0, W, H, r); c.clip();
+    const lg = c.createRadialGradient(W * 0.28, H * 0.12, 0, W * 0.28, H * 0.12, Math.max(W, H) * 1.05);
+    lg.addColorStop(0, "rgba(255,250,240,.13)"); lg.addColorStop(0.45, "rgba(255,255,255,.02)"); lg.addColorStop(0.75, "rgba(0,0,0,.08)"); lg.addColorStop(1, "rgba(0,0,0,.32)");
+    c.fillStyle = lg; c.fillRect(0, 0, W, H);
+    c.restore();
+    L.light = light;
+  }
   function geom(k) {
-    const s = L.s, g = s * 0.075 * k, bx = s * 0.14 * k, { W, H } = G.pic;
+    const s = L.s, g = s * 0.08 * k, bx = 0, { W, H } = G.pic;
     const tw = W * s + (W - 1) * g + Math.floor((W - 1) / 5) * bx;
     const th = H * s + (H - 1) * g + Math.floor((H - 1) / 5) * bx;
     const ox = (L.cw - tw) / 2, oy = (L.ch - th) / 2;
@@ -2345,13 +2374,8 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     c.clearRect(0, 0, L.cw, L.ch);
     const R = G.reveal, rt = R ? t - R.t0 : 0;
     // Tablett: Mörtelbett
-    rr(c, 0.5, 0.5, L.cw - 1, L.ch - 1, s * 0.42);
-    c.fillStyle = mortarPattern(c); c.fill();
-    const tg = c.createLinearGradient(0, 0, 0, L.ch);
-    tg.addColorStop(0, "rgba(255,255,255,.04)"); tg.addColorStop(1, "rgba(0,0,0,.25)");
-    c.fillStyle = tg; c.fill();
-    if (R) { c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
-    c.strokeStyle = "rgba(255,255,255,.08)"; c.lineWidth = 1; c.stroke();
+    if (L.tray) c.drawImage(L.tray, 0, 0, L.cw, L.ch);
+    if (R) { rr(c, 0, 0, L.cw, L.ch, s * 0.42); c.fillStyle = "rgba(6,4,10," + (0.35 * clamp(rt / 1500)) + ")"; c.fill(); }
     geom(R ? 1 - 0.7 * ease(clamp((rt - 900) / 1100)) : 1);
     let busy = !!R && rt < 4600;
     const S = s * Math.min(2, d), numA = R ? 1 - clamp(rt / 500) : 1;
@@ -2426,15 +2450,17 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       }
     }
     G.gems = gems;
+    // Raumlicht über allem: weiches Oberlicht, Vignette zum Rand
+    if (L.light) c.drawImage(L.light, 0, 0, L.cw, L.ch);
     // Block der gedrückten Zahl
     if (!R && G.press >= 0 && clues[G.press] >= 0) blockFrame(G.press, "rgba(255,255,255,.6)", 0.06);
     // Tipp
     if (G.hint && !R) {
       busy = true;
       const pulse = 0.5 + 0.5 * Math.sin(t / 650);
-      if (G.hint.wrong != null) cellFrame(G.hint.wrong, "rgba(255,143,134," + (0.5 + 0.5 * pulse) + ")", 0.09);
+      if (G.hint.wrong != null) cellFrame(G.hint.wrong, "rgba(255,160,170," + (0.5 + 0.5 * pulse) + ")", 0.09);
       else {
-        G.hint.clues.forEach(i => blockFrame(i, "rgba(244,201,107," + (0.45 + 0.4 * pulse) + ")", 0.07));
+        G.hint.clues.forEach(i => blockFrame(i, "rgba(225,228,255," + (0.4 + 0.4 * pulse) + ")", 0.06));
         G.hint.cells.forEach(([x, v]) => { if (G.st[x] < 0) cellFrame(x, v ? "rgba(255,231,168," + (0.35 + 0.6 * pulse) + ")" : "rgba(255,255,255," + (0.25 + 0.5 * pulse) + ")", 0.08, !v); });
       }
     }
@@ -2702,10 +2728,11 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
 
   // Fertiges Bild über die Karte schieben, damit nichts verdeckt wird.
   function fitBoard(on) {
-    board.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
-    if (!on) { board.style.transform = ""; return; }
+    const sh = $("#boardShadow");
+    board.style.transition = sh.style.transition = "transform .9s cubic-bezier(.2,.8,.2,1)";
+    if (!on) { board.style.transform = sh.style.transform = ""; return; }
     const card = $("#win .card"); if (!card) return;
-    board.style.transform = "";
+    board.style.transform = sh.style.transform = "";
     const b = board.getBoundingClientRect(), cr = card.getBoundingClientRect();
     const top = $(".gbar").getBoundingClientRect().bottom + 6;
     const side = cr.left > b.left + b.width * 0.5;
@@ -2714,7 +2741,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
     if (b.bottom <= bottom && b.right <= right) return;
     const k = Math.min(1, (bottom - top) / b.height, (right - left) / b.width);
     const dy = (top + bottom) / 2 - (b.top + b.height / 2), dx = side ? (left + right) / 2 - (b.left + b.width / 2) : 0;
-    board.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + k + ")";
+    board.style.transform = sh.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + k + ")";
   }
 
   /* ---------- Galerie ---------- */
@@ -2760,7 +2787,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   function openView(p) {
     const rec = save.solved[p.id];
     const el = openSheet(`<div class="view"><canvas></canvas><h2>${p.title}</h2><p>${p.verse}</p>
-      <p style="color:var(--gold)">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
+      <p style="color:#fff">${"★".repeat(rec.stars)}<span style="color:var(--faint)"> · ${fmtTime(rec.time)} min · ${rec.date.split("-").reverse().join(".")}</span></p>
       <div class="acts" style="justify-content:center"><button class="pill" id="vAgain">Noch einmal legen</button><button class="pill primary" id="vClose">Schließen</button></div></div>`);
     drawMosaic(el.querySelector("canvas"), p, 440);
     $("#vClose").onclick = () => { AU.ui(); closeSheet(); };
@@ -2790,7 +2817,7 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
       c.globalAlpha = 1;
     }
     c.fillStyle = "#ffffff"; c.fillText("6", s * 1.5, s * 1.5);
-    rr(c, 2, 2, s * 3 - 4, s * 3 - 4, s * 0.3); c.strokeStyle = "rgba(244,201,107,.9)"; c.lineWidth = 5; c.stroke();
+    rr(c, 2, 2, s * 3 - 4, s * 3 - 4, s * 0.3); c.strokeStyle = "rgba(225,228,255,.9)"; c.lineWidth = 4; c.stroke();
   }
   $("#btnHelp").onclick = () => { AU.init(); AU.ui(); openHelp(); };
 
@@ -2844,6 +2871,13 @@ window.MOSAIK_PUZZLES = {"pilz":{"c":".012332.000.3566.3..13689.86.1258999.8...7
   window.addEventListener("pagehide", () => { if (G) saveProg(); persist(true); });
   document.addEventListener("pointerdown", () => AU.init(), { once: true });
   fxSize();
+  (function toolIcons() {
+    const n = 52, mk = (style, col) => { const cv = document.createElement("canvas"); cv.width = cv.height = n; blit(cv.getContext("2d"), sprite(style, col, 34, 2), 9, 9, 34); return cv.toDataURL(); };
+    try {
+      document.documentElement.style.setProperty("--gem-icon", "url(" + mk("glass", "#2fb39a") + ")");
+      document.documentElement.style.setProperty("--hole-icon", "url(" + mk("holeDot", "") + ")");
+    } catch (e) { /* Symbole sind Zierde */ }
+  })();
   renderHome();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { numCache.clear(); kick(); });
   try { document.fonts && document.fonts.load('400 40px "Poiret One"').then(() => { numCache.clear(); kick(); }); } catch (e) { /* ohne Webschrift */ }
