@@ -1419,6 +1419,7 @@
       <div class="lbwrap" id="wBoard"></div>
       <div class="row">
         <button class="pill" id="wLook">Bild ansehen</button>
+        <button class="pill" id="wAgain"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>Nochmal</button>
         <button class="pill" id="wHome">Übersicht</button>
         ${nxt ? '<button class="pill primary" id="wNext">Nächstes Bild</button>' : ""}
       </div></div>`;
@@ -1431,6 +1432,7 @@
     requestAnimationFrame(() => fitBoard(true)); setTimeout(() => { if (!$("#win").hidden) fitBoard(true); }, 950);
     $("#wLook").onclick = () => { AU.ui(); showCard(false); toast("Tippe auf das Bild, um die Karte wieder zu öffnen.", 2600); };
     $("#wHome").onclick = () => { AU.ui(); leaveGame(); };
+    $("#wAgain").onclick = () => { AU.ui(); delete save.prog[pic.id]; persist(); startGame(pic); };
     if (nxt) $("#wNext").onclick = () => { AU.ui(); startGame(nxt); };
     fillBoard($("#wBoard"), pic.id, 5);
   }
