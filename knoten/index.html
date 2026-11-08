@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- Erzeugt von tools/build.js aus src/. Nicht von Hand bearbeiten. -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -192,6 +193,7 @@
   .tile.locked .n { font-size: 0; }
   .tile.locked .n::after { content: ""; display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--faint); }
   .foot { margin-top: 30px; text-align: center; font-family: var(--serif); font-style: italic; color: var(--faint); font-size: 14px; line-height: 1.5; }
+
 </style>
 </head>
 <body>
@@ -262,6 +264,247 @@
 </div>
 
 <script>
+/* =====================================================================
+   Seilphysik für „Knoten“
+   Jede Kordel ist eine Kette aus Gliedern im Raum (x, y in Rastereinheiten,
+   z = Höhe über dem Brett). Kordeln sind dick, elastisch, liegen durch
+   Schwerkraft auf dem Brett und können einander nicht durchdringen –
+   darum entstehen Umschlingungen und Verdrehungen von selbst.
+   Die Enden stecken in Ösen. Ein gegriffenes Ende wird angehoben und
+   über alles hinweggeführt; die Kordel schleift hinterher.
+   Läuft im Browser und in Node (für die Level-Erzeugung).
+   ===================================================================== */
+(function (root) {
+  "use strict";
+  const RAD = 0.075;      // Radius einer Kordel
+  const LIFT = 1.0;       // Höhe eines angehobenen Endes
+  const N = 22;           // Glieder pro Kordel
+  const G = 30;           // Schwerkraft
+  const SUB = 6;          // Teilschritte pro Bild
+  const DAMP = 0.985;
+  const SPEED = 7;        // Höchsttempo eines gezogenen Endes (Einheiten/s)
+  const D2 = 2 * RAD;
+
+  function createWorld(cols, rows, ends) {
+    const P = [];
+    for (let h = 0; h < cols * rows; h++) P.push({ x: h % cols, y: Math.floor(h / cols) });
+    const w = { cols, rows, P, ropes: [], drag: null };
+    ends.forEach(([a, b]) => w.ropes.push(makeRope(P[a], P[b], a, b)));
+    return w;
+  }
+  function makeRope(A, B, a, b) {
+    const x = new Float64Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const t = i / (N - 1);
+      x[i * 3] = A.x + (B.x - A.x) * t;
+      x[i * 3 + 1] = A.y + (B.y - A.y) * t;
+      x[i * 3 + 2] = i === 0 || i === N - 1 ? 0 : RAD;
+    }
+    return { e: [a, b], x, p: x.slice(), tgt: [null, null] };
+  }
+  const endIdx = (e) => (e ? N - 1 : 0);
+
+  // Ziel eines Endes: Öse (z = 0) oder angehoben über dem Finger
+  function endTarget(w, r, e) {
+    const R = w.ropes[r];
+    if (w.drag && w.drag.r === r && w.drag.e === e) return { x: w.drag.x, y: w.drag.y, z: LIFT };
+    const h = w.P[R.e[e]];
+    return { x: h.x, y: h.y, z: 0 };
+  }
+  function restLen(w, R) {
+    const a = R.x, i = (N - 1) * 3;
+    const L = Math.hypot(a[i] - a[0], a[i + 1] - a[1]);
+    return Math.max(0.35, L * 0.98) / (N - 1);
+  }
+
+  /* ---------- Nächste Punkte zweier Strecken im Raum ---------- */
+  const cs = { s: 0, t: 0 };
+  function closest(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) {
+    const d1x = bx - ax, d1y = by - ay, d1z = bz - az, d2x = dx - cx, d2y = dy - cy, d2z = dz - cz;
+    const rx = ax - cx, ry = ay - cy, rz = az - cz;
+    const a = d1x * d1x + d1y * d1y + d1z * d1z, e = d2x * d2x + d2y * d2y + d2z * d2z, f = d2x * rx + d2y * ry + d2z * rz;
+    let s, t;
+    if (a < 1e-12 && e < 1e-12) { s = t = 0; }
+    else if (a < 1e-12) { s = 0; t = Math.min(1, Math.max(0, f / e)); }
+    else {
+      const c = d1x * rx + d1y * ry + d1z * rz;
+      if (e < 1e-12) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+      else {
+        const b = d1x * d2x + d1y * d2y + d1z * d2z, den = a * e - b * b;
+        s = den > 1e-12 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = Math.min(1, Math.max(0, -c / a)); }
+        else if (t > 1) { t = 1; s = Math.min(1, Math.max(0, (b - c) / a)); }
+      }
+    }
+    cs.s = s; cs.t = t;
+  }
+
+  /* ---------- Ein Teilschritt ---------- */
+  // Kollisionssuche: Glieder nach linker Kante sortieren und nur Überlappungen prüfen
+  let SEG = null, ORD = null, NSEG = 0;
+  function collide(w) {
+    const n = w.ropes.length * (N - 1);
+    if (!SEG || NSEG !== n) { SEG = new Float64Array(n * 6); ORD = Int32Array.from({ length: n }, (_, i) => i); NSEG = n; }
+    let id = 0;
+    for (const R of w.ropes) {
+      const x = R.x;
+      for (let i = 0; i < N - 1; i++, id++) {
+        const j = i * 3, k = j + 3, o = id * 6;
+        SEG[o] = Math.min(x[j], x[k]) - D2; SEG[o + 1] = Math.max(x[j], x[k]) + D2;
+        SEG[o + 2] = Math.min(x[j + 1], x[k + 1]) - D2; SEG[o + 3] = Math.max(x[j + 1], x[k + 1]) + D2;
+        SEG[o + 4] = Math.min(x[j + 2], x[k + 2]) - D2; SEG[o + 5] = Math.max(x[j + 2], x[k + 2]) + D2;
+      }
+    }
+    for (let i = 1; i < n; i++) {                 // Einfügesortierung – die Reihenfolge ändert sich kaum
+      const v = ORD[i], key = SEG[v * 6];
+      let j = i - 1;
+      while (j >= 0 && SEG[ORD[j] * 6] > key) { ORD[j + 1] = ORD[j]; j--; }
+      ORD[j + 1] = v;
+    }
+    const per = N - 1;
+    for (let p = 0; p < n; p++) {
+      const A = ORD[p], oa = A * 6, maxx = SEG[oa + 1], ra = (A / per) | 0;
+      for (let q = p + 1; q < n; q++) {
+        const B = ORD[q], ob = B * 6;
+        if (SEG[ob] > maxx) break;
+        const rb = (B / per) | 0;
+        if (ra === rb) continue;
+        if (SEG[oa + 3] < SEG[ob + 2] || SEG[ob + 3] < SEG[oa + 2] || SEG[oa + 5] < SEG[ob + 4] || SEG[ob + 5] < SEG[oa + 4]) continue;
+        resolve(w, ra, A - ra * per, rb, B - rb * per);
+      }
+    }
+  }
+  function resolve(w, ra, ia, rb, ib) {
+    const xa = w.ropes[ra].x, xb = w.ropes[rb].x;
+    const a0 = ia * 3, a1 = a0 + 3, b0 = ib * 3, b1 = b0 + 3;
+    closest(xa[a0], xa[a0 + 1], xa[a0 + 2], xa[a1], xa[a1 + 1], xa[a1 + 2], xb[b0], xb[b0 + 1], xb[b0 + 2], xb[b1], xb[b1 + 1], xb[b1 + 2]);
+    const s = cs.s, t = cs.t;
+    const px = xa[a0] + (xa[a1] - xa[a0]) * s, py = xa[a0 + 1] + (xa[a1 + 1] - xa[a0 + 1]) * s, pz = xa[a0 + 2] + (xa[a1 + 2] - xa[a0 + 2]) * s;
+    const qx = xb[b0] + (xb[b1] - xb[b0]) * t, qy = xb[b0 + 1] + (xb[b1 + 1] - xb[b0 + 1]) * t, qz = xb[b0 + 2] + (xb[b1 + 2] - xb[b0 + 2]) * t;
+    let nx = px - qx, ny = py - qy, nz = pz - qz;
+    const d = Math.hypot(nx, ny, nz);
+    if (d >= D2) return;
+    if (d < 1e-9) { nx = 0; ny = 0; nz = pz >= qz ? 1 : -1; } else { nx /= d; ny /= d; nz /= d; }
+    const wa0 = ia === 0 ? 0 : 1, wa1 = ia + 1 === N - 1 ? 0 : 1, wb0 = ib === 0 ? 0 : 1, wb1 = ib + 1 === N - 1 ? 0 : 1;
+    const ca0 = (1 - s) * wa0, ca1 = s * wa1, cb0 = (1 - t) * wb0, cb1 = t * wb1;
+    const W = ca0 * ca0 + ca1 * ca1 + cb0 * cb0 + cb1 * cb1;
+    if (W < 1e-9) return;
+    const lam = (D2 - d) / W;
+    xa[a0] += nx * lam * ca0; xa[a0 + 1] += ny * lam * ca0; xa[a0 + 2] += nz * lam * ca0;
+    xa[a1] += nx * lam * ca1; xa[a1 + 1] += ny * lam * ca1; xa[a1 + 2] += nz * lam * ca1;
+    xb[b0] -= nx * lam * cb0; xb[b0 + 1] -= ny * lam * cb0; xb[b0 + 2] -= nz * lam * cb0;
+    xb[b1] -= nx * lam * cb1; xb[b1 + 1] -= ny * lam * cb1; xb[b1 + 2] -= nz * lam * cb1;
+  }
+  function pinEnds(w, h) {
+    w.ropes.forEach((R, r) => {
+      for (let e = 0; e < 2; e++) {
+        const T = endTarget(w, r, e), j = endIdx(e) * 3, x = R.x;
+        const dx = T.x - x[j], dy = T.y - x[j + 1], dz = T.z - x[j + 2], L = Math.hypot(dx, dy, dz), m = SPEED * h;
+        if (L <= m) { x[j] = T.x; x[j + 1] = T.y; x[j + 2] = T.z; }
+        else { x[j] += (dx / L) * m; x[j + 1] += (dy / L) * m; x[j + 2] += (dz / L) * m; }
+      }
+    });
+  }
+  function substep(w, h) {
+    const g = G * h * h;
+    for (const R of w.ropes) {
+      const x = R.x, p = R.p;
+      for (let i = 1; i < N - 1; i++) {
+        const j = i * 3;
+        let vx = (x[j] - p[j]) * DAMP, vy = (x[j + 1] - p[j + 1]) * DAMP, vz = (x[j + 2] - p[j + 2]) * DAMP;
+        if (x[j + 2] <= RAD * 1.05) { vx *= 0.9; vy *= 0.9; }   // Reibung auf dem Brett
+        p[j] = x[j]; p[j + 1] = x[j + 1]; p[j + 2] = x[j + 2];
+        x[j] += vx; x[j + 1] += vy; x[j + 2] += vz - g;
+      }
+      for (const e of [0, 1]) { const j = endIdx(e) * 3; p[j] = x[j]; p[j + 1] = x[j + 1]; p[j + 2] = x[j + 2]; }
+    }
+    pinEnds(w, h);
+    for (let it = 0; it < 2; it++) {
+      for (const R of w.ropes) {
+        const x = R.x, L0 = restLen(w, R);
+        for (let i = 0; i < N - 1; i++) {
+          const j = i * 3, k = j + 3;
+          const dx = x[k] - x[j], dy = x[k + 1] - x[j + 1], dz = x[k + 2] - x[j + 2], L = Math.hypot(dx, dy, dz) || 1e-9;
+          const wi = i === 0 ? 0 : 1, wk = i + 1 === N - 1 ? 0 : 1, ws = wi + wk;
+          if (!ws) continue;
+          const stiff = L > L0 ? 0.9 : 0.25;
+          const c = ((L - L0) / L / ws) * stiff;
+          x[j] += dx * c * wi; x[j + 1] += dy * c * wi; x[j + 2] += dz * c * wi;
+          x[k] -= dx * c * wk; x[k + 1] -= dy * c * wk; x[k + 2] -= dz * c * wk;
+        }
+      }
+      collide(w);
+      for (const R of w.ropes) {
+        const x = R.x;
+        for (let i = 1; i < N - 1; i++) if (x[i * 3 + 2] < RAD) x[i * 3 + 2] = RAD;
+      }
+    }
+  }
+  function step(w, dt) {
+    const h = Math.min(dt, 1 / 30) / SUB;
+    for (let s = 0; s < SUB; s++) substep(w, h);
+  }
+  function motion(w) {
+    let m = 0;
+    for (const R of w.ropes) for (let i = 0; i < N * 3; i++) m = Math.max(m, Math.abs(R.x[i] - R.p[i]));
+    return m;
+  }
+
+  /* ---------- Kreuzungen in der Draufsicht ---------- */
+  function crossings(w) {
+    const out = [], R = w.ropes;
+    for (let a = 0; a < R.length; a++) for (let b = a + 1; b < R.length; b++) {
+      const xa = R[a].x, xb = R[b].x;
+      for (let i = 0; i < N - 1; i++) {
+        const j = i * 3, k = j + 3;
+        const ax = xa[j], ay = xa[j + 1], bx = xa[k], by = xa[k + 1];
+        const minx = Math.min(ax, bx), maxx = Math.max(ax, bx), miny = Math.min(ay, by), maxy = Math.max(ay, by);
+        for (let m = 0; m < N - 1; m++) {
+          const p = m * 3, q = p + 3;
+          const cx = xb[p], cy = xb[p + 1], dx = xb[q], dy = xb[q + 1];
+          if (Math.max(cx, dx) < minx || Math.min(cx, dx) > maxx || Math.max(cy, dy) < miny || Math.min(cy, dy) > maxy) continue;
+          const d1 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx), d2 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+          if ((d1 > 0) === (d2 > 0)) continue;
+          const d3 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax), d4 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+          if ((d3 > 0) === (d4 > 0)) continue;
+          const s = d1 / (d1 - d2), t = d3 / (d3 - d4);
+          const za = xa[j + 2] + (xa[k + 2] - xa[j + 2]) * s, zb = xb[p + 2] + (xb[q + 2] - xb[p + 2]) * t;
+          out.push({ a, b, x: ax + (bx - ax) * s, y: ay + (by - ay) * s, top: za >= zb ? a : b, ia: i + s, ib: m + t });
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------- Speichern / Laden ---------- */
+  function snapshot(w) { return { ends: w.ropes.map((R) => R.e.slice()), x: w.ropes.map((R) => Array.from(R.x)) }; }
+  function restore(w, s) {
+    w.ropes.forEach((R, r) => { R.e = s.ends[r].slice(); R.x = Float64Array.from(s.x[r]); R.p = R.x.slice(); });
+    w.drag = null;
+  }
+  // kompakt: 1/200 Rastereinheit
+  function pack(w) {
+    const ends = w.ropes.map((R) => R.e.join(",")).join(";");
+    const nums = [];
+    for (const R of w.ropes) for (let i = 0; i < N * 3; i++) nums.push(Math.round(R.x[i] * 200));
+    return ends + "|" + nums.map((v) => v.toString(36)).join(",");
+  }
+  function unpack(w, str) {
+    const [e, n] = str.split("|");
+    const ends = e.split(";").map((s) => s.split(",").map(Number));
+    const nums = n.split(",").map((v) => parseInt(v, 36) / 200);
+    w.ropes.forEach((R, r) => { R.e = ends[r]; R.x = Float64Array.from(nums.slice(r * N * 3, (r + 1) * N * 3)); R.p = R.x.slice(); });
+    w.drag = null;
+  }
+
+  const API = { RAD, LIFT, N, createWorld, step, motion, crossings, snapshot, restore, pack, unpack };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  else root.Rope = API;
+})(typeof window !== "undefined" ? window : globalThis);
+
+window.KNOTEN_LEVELS = [{"c":4,"h":5,"k":"7,1;5,16|go,5k,0,fx,5m,f,f2,5o,f,e7,5r,f,dc,5t,f,ch,5v,f,bm,5x,f,ar,60,f,9w,62,f,91,64,g,87,66,g,7c,69,h,6h,6a,k,5y,5v,11,5u,52,13,5u,4b,x,5s,3j,t,5q,2s,q,5o,21,m,5n,19,i,5l,i,f,5k,0,0,5k,5k,0,6g,59,f,70,5i,13,6t,6f,1h,6e,7c,1b,61,87,18,5n,93,15,59,9z,12,4w,av,z,4i,br,w,44,cn,t,3q,dj,r,3d,ef,p,2z,fb,n,2l,g7,l,27,h3,k,1u,hz,j,1g,iv,h,12,jr,g,o,kn,g,b,lj,f,0,m8,0","m":2,"t":50},{"c":4,"h":5,"k":"12,5;13,8;4,17|0,go,0,7,g9,f,g,fp,i,q,f6,n,z,em,s,18,e3,y,1h,dk,14,1q,d0,19,20,cg,1a,2a,bw,1b,2k,bd,18,2u,au,13,34,aa,y,3e,9r,u,3o,98,r,3y,8o,n,48,84,l,4i,7l,j,4t,71,h,53,6i,g,5d,5y,f,5k,5k,0,5k,go,0,5g,gk,f,55,ga,f,4v,g1,f,4k,fr,f,49,fh,f,3z,f8,f,3o,ey,f,3d,ep,f,33,ef,f,2t,e4,f,2k,du,f,2a,dj,f,21,d8,f,1s,cx,f,1i,cn,f,18,cc,f,y,c2,f,o,bs,f,d,bi,f,3,b7,f,0,b4,0,0,5k,0,a,69,f,l,72,f,w,7v,f,17,8o,f,1i,9g,f,1t,a9,f,24,b2,f,2f,bv,g,2q,cm,o,31,dd,y,3b,e5,17,3j,ez,19,3r,fs,14,3z,gm,y,47,hf,t,4g,i9,p,4o,j2,m,4w,jw,j,55,kp,h,5d,lj,f,5k,m8,0","m":2,"t":55},{"c":4,"h":5,"k":"9,15;3,11;18,5|5k,b4,0,69,b3,f,72,b1,f,7v,az,f,8o,ax,f,9h,aw,f,aa,au,f,b3,as,f,bw,aq,g,cp,ao,g,dh,an,g,ea,al,h,f3,aj,j,fo,as,11,fx,bj,19,g0,cc,11,g4,d4,w,g8,dv,s,gd,en,n,gh,fe,j,gl,g6,f,go,go,0,go,0,0,gk,k,f,gg,18,f,gc,1v,h,g7,2j,j,g3,37,l,fz,3v,n,fv,4j,p,fq,57,s,fm,5v,u,fi,6i,x,fd,76,10,f9,7u,13,f5,8i,16,f0,95,19,ew,9t,1d,es,ah,1g,er,b4,1a,f0,bj,s,fk,bk,f,g9,ba,f,go,b4,0,b4,m8,0,aw,li,f,am,kp,f,ac,jw,f,a3,j3,f,9t,ia,f,9j,hg,g,9a,gn,h,90,fu,j,8q,f1,m,8h,e8,p,87,df,t,7y,cm,y,7o,bt,13,7f,b1,19,75,a8,14,6v,9f,x,6m,8n,s,6c,7u,n,62,71,j,5s,68,f,5k,5k,0","m":3,"t":65},{"c":4,"h":5,"k":"6,7;17,8;18,12|b4,5k,0,b6,5k,f,bg,5k,f,bq,5k,f,c1,5k,f,cb,5k,f,cl,5k,f,cw,5k,f,d6,5k,f,dg,5k,f,dr,5k,f,e1,5k,f,eb,5k,f,em,5k,f,ew,5k,f,f7,5k,f,fh,5k,f,fr,5k,f,g2,5k,f,gc,5k,f,gm,5k,f,go,5k,0,5k,m8,0,5g,lq,h,5c,l9,y,58,kn,1a,53,jz,15,4s,ji,s,48,j8,h,3l,j1,f,2z,is,n,2k,ie,y,29,hu,18,22,h7,1a,1u,gl,15,1m,fy,11,1f,fc,x,17,ep,u,10,e2,q,s,dg,n,l,ct,k,d,c6,i,5,bk,f,0,b4,0,b4,m8,0,al,m3,f,9y,lw,f,9b,lp,f,8o,li,f,81,lc,f,7e,l5,f,6q,ky,f,63,kr,f,5g,kl,f,4s,ki,f,49,ka,s,3y,jt,15,3t,j6,1b,3o,ij,17,3e,i0,x,2x,hn,l,2c,he,f,1p,h7,f,13,h0,f,g,gt,f,0,go,0","m":3,"t":65},{"c":4,"h":5,"k":"12,11;6,7;9,4;16,8|0,go,0,d,fw,f,s,f0,j,17,e5,p,1l,da,v,20,cf,11,2e,bk,16,38,az,13,47,au,11,56,aw,y,65,ax,w,75,ax,t,84,ay,r,93,az,p,a2,az,n,b1,b0,l,c0,b1,k,cz,b1,i,dy,b2,h,ey,b3,g,fx,b3,f,go,b4,0,b4,5k,0,b6,5k,f,bg,5k,f,bq,5k,f,c1,5k,f,cb,5k,f,cl,5k,f,cw,5k,f,d6,5k,f,dg,5k,f,dr,5k,f,e1,5k,f,eb,5k,f,em,5k,f,ew,5k,f,f7,5k,f,fh,5k,f,fr,5k,f,g2,5k,f,gc,5k,f,gm,5k,f,go,5k,0,5k,b4,0,54,bi,f,4l,by,f,42,ce,f,3h,cl,l,33,cg,13,33,c2,1i,31,bo,1w,2t,b7,20,2l,aq,1u,2d,aa,1o,25,9u,1j,1x,9e,1f,1p,8y,1a,1h,8i,15,18,81,11,10,7l,w,s,75,s,k,6p,n,c,68,j,4,5s,f,0,5k,0,0,m8,0,9,lm,f,k,kw,f,v,k6,h,16,jg,k,1g,ir,n,1r,i1,p,22,hb,s,2d,gm,v,2n,fw,y,2y,f6,12,39,eh,15,3k,dr,18,3u,d1,1c,42,ca,1c,3s,bp,z,37,bo,h,2i,bl,f,1t,bg,f,14,bb,f,g,b7,f,0,b4,0","m":4,"t":75},{"c":4,"h":5,"k":"17,18;5,16;7,14;10,8|5k,m8,0,5m,m8,f,5w,m8,f,66,m8,f,6h,m8,f,6r,m8,f,71,m8,f,7c,m8,f,7m,m8,f,7w,m8,f,87,m8,f,8h,m8,f,8r,m8,f,92,m8,f,9c,m8,f,9n,m8,f,9x,m8,f,a7,m8,f,ai,m8,f,as,m8,f,b2,m8,f,b4,m8,0,5k,5k,0,66,6b,f,6t,75,l,7g,7y,s,84,8r,10,8r,9k,18,9c,af,17,9a,bc,j,8l,c6,f,7x,cy,g,78,dq,f,6k,ej,f,5w,fb,f,58,g4,f,4j,gw,f,3v,hp,f,37,ih,f,2j,ja,f,1u,k2,f,16,ku,f,i,ln,f,0,m8,0,go,5k,0,g1,5y,f,fb,6e,f,el,6t,f,du,79,f,d4,7p,f,ce,85,f,bo,8k,f,ay,90,f,a8,9g,f,9i,9v,f,8r,ab,f,8e,au,u,8j,bi,19,8w,c7,1a,98,cv,13,9k,dj,y,9w,e7,t,a8,ew,o,ak,fk,k,aw,g8,f,b4,go,0,b4,b4,0,aq,b6,f,ac,b8,v,9z,b9,1b,9i,b8,1n,8z,b2,1t,8e,az,1u,7u,az,1o,79,b0,1k,6p,b0,1f,64,b0,1a,5k,b1,16,4z,b1,12,4f,b1,z,3u,b2,v,39,b2,s,2p,b2,p,24,b3,m,1j,b3,j,y,b3,h,d,b4,f,0,b4,0","m":4,"t":75},{"c":4,"h":6,"k":"7,18;6,3;19,9;23,10|go,5k,0,fy,60,f,f5,6i,l,ed,6z,t,dm,7h,16,d5,82,1s,cz,8r,2e,cr,9n,2j,cm,ak,2d,ci,bh,26,ce,cd,1z,ca,da,1t,c5,e7,1m,c1,f4,1g,bx,g0,1a,bt,gx,14,bo,hu,z,bk,ir,u,bg,jo,o,bc,kl,k,b7,li,f,b4,m8,0,b4,5k,0,bb,6f,f,bk,7e,f,bs,8c,f,c0,99,f,cf,9u,12,d3,9w,1s,dl,98,21,dx,8i,1t,e7,7u,1s,ef,75,1p,em,6g,1j,eu,5s,1f,f2,53,1a,fa,4f,15,fh,3q,11,fp,32,w,fx,2d,s,g5,1o,o,gd,10,j,gk,b,f,go,0,0,go,m8,0,gf,l7,f,g6,k3,f,fw,iz,h,fm,hv,j,fd,gr,l,f3,fn,n,eu,ej,q,ek,df,s,eb,cb,v,e1,b7,y,dr,a3,10,de,91,16,ce,90,1q,bl,9j,1t,ao,9r,1j,9s,a0,1b,8w,a8,13,80,ah,v,73,ap,n,67,ay,f,5k,b4,0,go,rs,0,gg,qq,f,g8,pl,f,g0,og,f,fs,nb,f,fk,m6,f,fb,l1,f,f3,jw,f,ev,iq,f,en,hl,f,ee,gg,f,e6,fb,f,dy,e6,f,dq,d1,f,di,bw,f,da,ar,f,d3,9l,f,cn,8n,r,bq,8q,1a,bc,9k,v,b8,ae,f,b4,b4,0","m":5,"t":95},{"c":4,"h":6,"k":"4,17;21,18;10,16;3,5;12,1|0,5k,0,10,5j,f,23,5h,h,36,5g,m,4a,5e,q,5c,5d,z,62,63,q,5x,7a,n,5w,8d,m,5v,9g,k,5u,ak,i,5t,bn,g,5s,cq,f,5r,dt,f,5q,ew,f,5p,g0,f,5p,h3,f,5o,i6,f,5n,j9,f,5m,kd,f,5l,lg,f,5k,m8,0,5k,rs,0,5o,ro,f,5y,re,f,68,r4,f,6i,qu,f,6t,qj,f,73,q9,f,7d,pz,f,7n,pp,f,7x,pf,f,87,p5,f,8h,ov,f,8r,ol,f,92,oa,f,9c,o0,f,9m,nq,f,9w,ng,f,a6,n6,f,ag,mw,f,aq,mm,f,b1,mb,f,b4,m8,0,b4,b4,0,af,be,f,9m,bo,j,8t,bz,o,81,ca,u,78,cl,10,6g,cv,16,5n,d6,19,4v,dh,12,42,dr,w,39,e2,r,2j,eh,u,1z,f2,15,1n,fu,1c,1f,go,17,18,hi,12,10,ib,x,t,j5,s,l,jy,o,d,ks,j,6,ll,f,0,m8,0,go,0,0,g5,b,f,fj,o,f,ew,11,h,ea,1e,j,do,1r,l,d1,24,n,cf,2i,p,bt,2v,s,b6,38,u,ak,3l,x,9y,3y,10,9b,4b,13,8p,4o,16,83,51,1a,7h,5e,1d,6u,5r,1h,68,64,1k,5l,6g,1i,54,6j,10,56,63,f,5k,5k,0,0,go,0,s,ge,f,1o,g4,f,2h,fr,q,2z,f7,19,38,ed,1m,3c,dg,1l,3h,ci,1k,3m,bl,1k,3r,ao,1k,3v,9r,1k,40,8u,1k,45,7x,1l,4a,70,1m,4f,62,1n,4k,55,1m,4q,4a,1c,4w,3e,13,52,2i,v,59,1m,n,5f,q,f,5k,0,0","m":5,"t":85},{"c":4,"h":6,"k":"20,18;6,13;10,23;21,8;11,12|0,rs,0,l,rj,f,1a,r8,f,1z,qx,f,2o,qm,f,3d,qb,f,41,pz,f,4h,pk,v,4e,oz,1e,43,ob,1d,41,ns,w,4g,ng,f,55,na,f,5u,n6,f,6j,n2,f,78,mx,f,7w,mt,f,8l,mo,f,9a,mk,f,9y,mf,f,an,mb,f,b4,m8,0,b4,5k,0,b7,64,f,ba,6t,f,bd,7i,f,bg,87,g,bj,8v,h,bm,9k,i,bp,a9,k,bs,ax,l,bp,bm,k,bb,c6,f,ar,cl,f,a8,d0,f,9o,df,f,95,du,f,8m,e9,f,83,ep,f,7j,f4,f,70,fj,f,6h,fy,f,5x,gd,f,5k,go,0,b4,b4,0,aq,bg,p,aw,c4,1a,b7,cz,14,bh,ds,w,bs,em,t,c3,fg,q,ce,ga,o,cq,h3,l,d1,hx,j,dc,ir,i,dn,jl,g,dy,kf,g,e9,l9,f,ek,m3,f,ev,mx,f,f6,nr,f,fi,ol,f,ft,pf,f,g4,q9,f,gf,r3,f,go,rs,0,5k,rs,0,4y,r8,i,4c,qo,10,3q,q1,1d,3g,p9,x,45,or,f,4y,ob,t,4y,ng,1b,4k,mj,15,49,lm,11,3x,kq,x,3m,jt,t,3a,ix,p,2z,i0,l,2n,h3,i,2b,g7,f,1x,fb,f,1j,ef,f,14,dk,f,q,co,f,b,bt,f,0,b4,0,go,b4,0,fz,bf,f,f7,br,n,ef,c3,w,do,cg,15,cx,cs,1e,c5,d4,1o,bd,df,1w,aj,do,1r,9p,dx,1n,8v,e5,1k,81,ee,1h,77,en,1f,6c,ew,1d,5i,f5,1b,4o,fd,1a,3u,fm,1a,30,fv,19,25,g4,1a,1e,gb,x,o,gi,g,0,go,0","m":6,"t":100},{"c":4,"h":6,"k":"16,12;21,15;23,14;11,13;10,18|0,m8,0,0,m6,f,0,lw,f,0,lm,f,0,lb,f,0,l1,f,0,kr,f,0,kg,f,0,k6,f,0,jw,f,0,jl,f,0,jb,f,0,j1,f,0,iq,f,0,ig,f,0,i5,f,0,hv,f,0,hl,f,0,ha,f,0,h0,f,0,gq,f,0,go,0,5k,rs,0,61,r4,f,6l,qd,f,74,pm,f,7o,ov,f,87,o4,f,8r,nd,f,9a,mm,f,9u,lv,f,ad,l4,f,ax,kd,f,bm,jq,f,c5,j1,p,cg,i9,14,cr,hh,1j,d0,gn,1u,d0,fu,1e,db,fn,j,ea,fx,f,f5,g7,f,g1,gh,f,go,go,0,go,rs,0,gf,rc,f,g4,qs,f,fu,q7,g,fj,pn,i,f8,p3,k,ex,oi,m,em,ny,o,eb,ne,r,e0,mu,u,dp,ma,x,df,lp,11,d4,l5,14,ct,kl,18,ci,k1,1d,c8,jh,1i,bx,ix,1m,bn,ic,1m,bc,ht,1f,b4,hf,z,b3,h2,g,b4,go,0,go,b4,0,fy,bk,f,f7,c0,q,eg,ch,12,do,cz,1c,da,dl,z,do,ee,o,dy,f6,15,e1,g0,1c,dm,gl,z,cu,go,s,c7,gl,18,bj,gj,17,au,gi,14,a5,gj,z,9h,gk,w,8s,gl,s,83,gl,o,7f,gm,l,6q,gn,i,61,go,f,5k,go,0,b4,b4,0,bq,bj,f,cf,bz,f,d4,cg,f,ds,cw,f,ea,dh,p,e6,dz,1g,dk,ec,1p,d1,er,1e,cn,f6,10,cd,fq,p,c5,gb,f,bz,gz,f,bu,hm,i,bk,i8,o,bb,is,y,b9,je,17,ba,k2,19,bc,kp,13,b9,la,r,b6,lu,f,b4,m8,0","m":6,"t":100},{"c":4,"h":6,"k":"13,21;5,11;14,8;18,23;17,6;1,2|5k,go,0,63,g1,f,6m,fd,u,76,eq,1b,80,ec,y,8k,f1,f,8g,g1,v,89,gr,19,82,hl,13,7u,ie,11,7n,j7,y,7g,k0,w,79,kt,u,72,ln,s,6v,mg,q,6o,n9,o,6h,o2,m,69,ow,k,62,pp,i,5v,qi,h,5o,rb,f,5k,rs,0,5k,5k,0,5q,6g,f,5x,7f,f,64,8e,f,6a,9e,f,6h,ad,f,6o,bc,f,6v,cc,f,72,db,f,78,ea,f,7g,f8,f,7y,ff,1f,92,et,1d,9y,ed,15,au,dx,11,bq,di,y,cm,d3,u,di,cn,q,ee,c8,m,fa,bs,j,g6,bd,f,go,b4,0,b4,go,0,al,gp,f,9x,gr,f,99,gt,f,8l,gu,f,7x,gr,f,7d,gk,p,6t,gf,z,69,g8,1a,5q,fw,1a,59,fh,16,4r,f2,12,4a,eo,y,3s,e9,v,3b,dv,s,2t,dg,p,2b,d1,m,1u,cm,k,1c,c8,i,u,bt,g,c,be,f,0,b4,0,b4,m8,0,b8,mc,f,bi,mm,f,bs,mw,f,c2,n6,f,cd,nh,f,cn,nr,f,cx,o1,f,d7,ob,f,dh,ol,f,dr,ov,f,e1,p5,f,eb,pf,f,em,pq,f,ew,q0,f,f6,qa,f,fg,qk,f,fq,qu,f,g0,r4,f,ga,re,f,gl,rp,f,go,rs,0,5k,m8,0,5s,li,f,61,kp,l,6a,jv,s,6j,j2,z,6s,i9,17,71,hh,1f,7a,go,1o,7h,fu,1u,7p,f0,21,81,e8,1w,8b,dg,1o,8l,cn,1h,8v,bv,1a,95,b2,14,9g,a9,z,9q,9g,u,a0,8o,p,ab,7v,l,al,72,i,av,68,f,b4,5k,0,5k,0,0,5m,0,f,5w,0,f,66,0,f,6h,0,f,6r,0,f,71,0,f,7c,0,f,7m,0,f,7w,0,f,87,0,f,8h,0,f,8r,0,f,92,0,f,9c,0,f,9n,0,f,9x,0,f,a7,0,f,ai,0,f,as,0,f,b2,0,f,b4,0,0","m":6,"t":100},{"c":4,"h":6,"k":"15,8;18,11;21,20;9,22;13,7;1,5|go,go,0,g0,g7,f,f8,fo,f,eh,f6,f,dq,em,f,cz,e3,f,c8,dk,f,bh,d0,f,aq,ch,f,9z,by,f,98,bf,f,8i,av,f,7s,aa,f,71,9p,f,64,9w,f,58,a2,f,4b,a9,f,3f,af,f,2j,am,f,1m,as,f,q,az,f,0,b4,0,b4,m8,0,au,lt,f,at,lb,t,ay,kt,16,b8,ka,1f,bk,jq,1h,bw,j6,1e,c8,im,1d,cj,i2,1c,cv,hi,1b,d7,gy,1a,dj,ge,1a,dv,fu,1a,e7,fb,1a,ei,er,17,eu,e7,12,f5,do,x,fh,d5,s,ft,cl,n,g4,c1,j,gg,bi,f,go,b4,0,5k,rs,0,5i,rs,f,58,rs,f,4y,rs,f,4n,rs,f,4d,rs,f,43,rs,f,3s,rs,f,3i,rs,f,38,rs,f,2x,rs,f,2n,rs,f,2d,rs,f,22,rs,f,1s,rs,f,1h,rs,f,17,rs,f,x,rs,f,m,rs,f,c,rs,f,2,rs,f,0,rs,0,5k,b4,0,6d,ap,l,75,a6,15,81,9d,s,8z,9b,1i,9d,aj,1r,9k,bn,1j,9t,cq,1e,a2,dt,19,ab,ew,15,aj,fz,10,as,h2,w,b1,i5,r,ba,j9,n,bj,kc,l,bp,lg,n,bo,mk,n,bj,no,l,bf,os,j,bb,pw,h,b7,r0,f,b4,rs,0,5k,go,0,5l,fo,f,5m,el,j,5n,di,p,5o,cf,w,5p,bd,12,5q,aa,18,5s,96,17,5w,83,16,70,7s,19,7o,8w,1o,80,9w,1u,8l,ad,y,9l,9p,n,ai,94,o,bg,8l,n,cd,82,l,da,7i,j,e7,6z,i,f5,6g,g,g2,5x,f,go,5k,0,5k,0,0,5n,p,f,5q,1g,g,5t,27,m,5w,2z,s,5z,3q,z,62,4h,15,65,58,1c,69,60,1i,6c,6r,1p,6f,7i,1w,6j,8a,21,6n,8v,1i,6q,8m,q,6m,85,f,6g,7q,j,6a,7c,i,64,6x,h,5y,6j,h,5s,64,g,5m,5q,f,5k,5k,0","m":7,"t":115},{"c":4,"h":6,"k":"2,15;21,10;3,14;17,20;8,5;11,1|b4,0,0,b3,u,f,b2,1s,f,b1,2p,h,b0,3n,j,az,4k,m,ay,5i,p,ax,6f,s,aw,7d,v,au,8a,y,at,98,12,au,a4,1b,b0,b1,1e,bi,br,14,c4,cc,q,cs,cz,j,dg,dm,i,e4,e9,h,es,ew,g,fg,fj,f,g5,g6,f,go,go,0,5k,rs,0,60,qt,f,6i,ps,f,6z,or,h,7h,np,k,7y,mo,n,8g,ln,q,8y,kl,t,9f,jk,w,9x,ij,z,ae,hh,12,aw,gg,16,bd,ff,19,bv,ed,1c,cc,dc,1f,ct,ca,1g,d8,b8,1c,db,a5,w,ch,9h,x,bm,a2,18,bi,ay,r,b4,b4,0,go,0,0,gb,x,f,fx,1w,i,fj,2w,o,f5,3v,t,er,4u,z,ed,5u,15,dz,6t,1b,dl,7s,1h,d7,8s,1n,ct,9r,1u,cg,am,1e,cb,ag,f,bf,9x,f,al,ag,j,ae,bd,m,ak,ca,k,ao,d7,i,as,e4,h,aw,f1,g,b1,fy,f,b4,go,0,5k,m8,0,5g,mc,f,56,mm,f,4w,mw,f,4m,n6,f,4b,nh,f,41,nr,f,3r,o1,f,3h,ob,f,37,ol,f,2x,ov,f,2n,p5,f,2d,pf,f,22,pq,f,1s,q0,f,1i,qa,f,18,qk,f,y,qu,f,o,r4,f,e,re,f,3,rp,f,0,rs,0,0,b4,0,4,b0,f,e,aq,f,o,ag,f,y,a6,f,19,9v,f,1j,9l,f,1t,9b,f,23,91,f,2d,8r,f,2n,8h,f,2x,87,f,37,7x,f,3i,7m,f,3s,7c,f,42,72,f,4c,6s,f,4m,6i,f,4w,68,f,56,5y,f,5h,5n,f,5k,5k,0,go,b4,0,fv,b5,f,ez,b7,f,e3,b9,f,d7,ba,f,cf,bc,t,by,b4,1k,bk,ah,20,b6,9n,1z,aq,8w,1v,ab,84,1p,9v,7d,1k,9f,6m,1f,8z,5v,1a,8j,54,15,83,4d,10,7n,3l,w,78,2u,r,6s,23,n,6c,1c,j,5w,k,f,5k,0,0","m":7,"t":110},{"c":4,"h":6,"k":"6,17;12,4;8,10;11,1;22,21;16,20;19,23|b4,5k,0,aa,64,f,9e,6p,f,8i,7a,g,7l,7v,h,6p,8h,i,61,8u,17,5y,9b,1z,5u,ab,1y,5t,b9,1x,5s,c6,1t,5r,d3,1n,5r,e1,1h,5q,ey,1b,5p,fw,16,5o,gt,11,5o,hr,w,5n,io,s,5m,jm,n,5l,kk,j,5l,lh,f,5k,m8,0,0,go,0,p,g2,f,1g,fe,f,27,eq,i,2y,e2,m,3p,de,q,4h,cq,u,58,c2,y,5z,be,12,6q,aq,18,7d,9x,14,75,8w,1g,6q,82,1i,5y,7t,z,56,7k,p,4e,79,p,3l,6y,n,2t,6n,l,21,6c,j,18,61,h,g,5q,f,0,5k,0,0,b4,0,f,az,f,z,ar,f,1j,ak,f,24,ad,f,2o,a6,f,38,9z,f,3s,9s,f,4c,9l,f,4w,9d,f,5g,96,f,62,99,f,6k,9e,n,6c,9m,1b,6r,9t,1z,7i,a3,1z,85,ac,1m,8s,ak,1c,9f,at,12,a2,b0,r,ap,b3,f,b4,b4,0,go,b4,0,fp,az,f,en,at,f,dl,ao,f,cj,ai,f,bh,ad,f,af,a8,f,9d,a8,f,8a,a8,f,78,a9,f,66,a9,k,5h,9o,13,58,8p,1c,59,7p,1n,5b,6p,1e,5c,5p,18,5e,4p,12,5f,3p,w,5g,2p,q,5i,1p,l,5j,p,f,5k,0,0,b4,rs,0,b2,rs,f,as,rs,f,ai,rs,f,a7,rs,f,9x,rs,f,9n,rs,f,9c,rs,f,92,rs,f,8s,rs,f,8h,rs,f,87,rs,f,7x,rs,f,7m,rs,f,7c,rs,f,71,rs,f,6r,rs,f,6h,rs,f,66,rs,f,5w,rs,f,5m,rs,f,5k,rs,0,0,m8,0,0,ma,f,0,mk,f,0,mu,f,0,n5,f,0,nf,f,0,np,f,0,o0,f,0,oa,f,0,ok,f,0,ov,f,0,p5,f,0,pf,f,0,pq,f,0,q0,f,0,qb,f,0,ql,f,0,qv,f,0,r6,f,0,rg,f,0,rq,f,0,rs,0,go,m8,0,go,ma,f,go,mk,f,go,mu,f,go,n5,f,go,nf,f,go,np,f,go,o0,f,go,oa,f,go,ok,f,go,ov,f,go,p5,f,go,pf,f,go,pq,f,go,q0,f,go,qb,f,go,ql,f,go,qv,f,go,r6,f,go,rg,f,go,rq,f,go,rs,0","m":8,"t":120},{"c":4,"h":6,"k":"3,7;6,12;10,4;5,18;16,13;17,11;22,23|go,0,0,go,2,f,go,c,f,go,m,f,go,x,f,go,17,f,go,1h,f,go,1s,f,go,22,f,go,2c,f,go,2n,f,go,2x,f,go,37,f,go,3i,f,go,3s,f,go,43,f,go,4d,f,go,4n,f,go,4y,f,go,58,f,go,5i,f,go,5k,0,b4,5k,0,ao,62,f,a7,6m,m,9p,77,t,97,7r,11,8p,8b,1a,88,8w,1j,7q,9g,1s,7a,a2,1y,6s,am,1t,67,b4,1m,5n,bn,1g,52,c5,1a,4i,cn,14,3x,d6,z,3d,do,v,2s,e7,r,27,ep,n,1m,f8,k,12,fq,h,h,g9,f,0,go,0,b4,b4,0,ag,b1,f,9p,ax,f,8x,at,f,86,ap,f,7e,al,f,6t,ab,t,6q,9s,1b,6w,94,1k,73,8f,19,6w,7x,s,6a,7q,f,5l,7l,f,4y,7c,f,4b,74,f,3o,6w,f,31,6n,f,2e,6f,f,1q,67,f,13,5y,f,g,5q,f,0,5k,0,5k,5k,0,5p,6d,l,5v,78,17,5z,88,16,6j,8x,m,7g,9e,p,7s,a8,18,7g,b9,1a,76,c8,18,6w,d8,18,6m,e7,17,6c,f6,17,61,g5,17,5s,h5,14,5z,hy,k,6o,in,f,7g,j9,f,88,jw,f,8z,ki,f,9r,l4,f,aj,lr,f,b4,m8,0,0,m8,0,d,m2,f,t,lu,f,1a,ll,i,1q,ld,m,27,l5,q,2n,kx,t,34,ko,x,3k,kg,11,41,k8,15,4h,k0,19,4y,js,1e,5e,jk,1i,5v,ja,1j,69,iz,1h,6k,ik,1c,6s,i4,16,6s,ho,v,6o,h8,m,6c,gw,f,5t,gq,f,5k,go,0,5k,m8,0,5k,lh,f,5j,kn,h,5j,js,k,5j,iy,r,5o,ib,1b,65,hp,1o,6t,h6,1n,7j,gr,1i,89,gb,1d,8z,fv,19,9o,ff,15,ae,ez,11,b4,ej,y,bt,e4,u,cj,do,r,d9,d8,o,dz,cs,m,ep,cc,j,fe,bw,h,g4,bg,f,go,b4,0,b4,rs,0,b6,rs,f,bg,rs,f,bq,rs,f,c1,rs,f,cb,rs,f,cl,rs,f,cw,rs,f,d6,rs,f,dg,rs,f,dr,rs,f,e1,rs,f,eb,rs,f,em,rs,f,ew,rs,f,f7,rs,f,fh,rs,f,fr,rs,f,g2,rs,f,gc,rs,f,gm,rs,f,go,rs,0","m":8,"t":120},{"c":4,"h":6,"k":"5,18;13,6;10,22;8,7;15,11;14,1;12,20|5k,5k,0,65,65,f,6s,6t,f,7f,7h,f,83,84,f,8s,8q,f,9i,99,o,9t,9x,1a,9z,at,15,9v,bg,f,a2,cd,f,a1,db,f,9z,e8,f,9s,f5,f,9u,g2,f,a2,gz,f,a8,hv,f,af,is,f,al,jp,f,as,kl,f,az,li,f,b4,m8,0,5k,go,0,63,gb,f,6p,fx,f,7b,fi,f,7y,f3,f,8k,ep,f,93,e8,n,9f,do,11,9j,d4,1h,9d,ch,1t,95,bs,1x,8x,b4,23,8o,af,23,8d,9s,1x,87,94,1o,8d,8i,1b,8u,80,11,9c,7h,w,9t,6y,q,ab,6f,k,as,5x,f,b4,5k,0,b4,b4,0,aq,bj,s,a2,c0,1b,9b,cg,x,8r,d5,s,8d,dw,15,8g,er,1c,8n,fn,17,8t,gj,14,90,he,10,96,ia,x,9d,j6,v,9j,k1,s,9q,kx,q,9w,lt,o,a3,mp,m,a9,nk,k,ag,og,i,am,pc,h,as,q8,g,az,r3,f,b4,rs,0,0,b4,0,t,b3,f,1q,b1,i,2m,b0,m,3j,az,q,4f,ax,v,5c,aw,z,68,av,15,75,at,1a,81,as,1g,8w,as,17,9d,ai,f,a5,a2,f,aw,9j,f,bm,91,f,cd,8j,f,d4,80,f,du,7i,f,el,70,f,fc,6h,f,g2,5z,f,go,5k,0,go,go,0,go,gm,f,go,gc,f,go,g2,f,go,fr,f,go,fh,f,go,f7,f,go,ew,f,go,em,f,go,ec,f,go,e1,f,go,dr,f,go,dh,f,go,d6,f,go,cw,f,go,cl,f,go,cb,f,go,c1,f,go,bq,f,go,bg,f,go,b6,f,go,b4,0,b4,go,0,ar,fz,l,ab,fb,14,9p,en,1g,93,dy,1t,8n,d4,1s,8f,ca,1b,8b,bj,p,89,am,f,8l,9u,x,92,97,1h,95,8c,1v,8t,7g,1u,8g,6m,1m,82,5r,1f,7p,4x,19,7c,42,12,6z,38,w,6l,2d,q,68,1j,l,5v,o,f,5k,0,0,0,go,0,0,h1,f,0,hl,f,0,i5,f,0,io,f,0,j8,f,0,js,f,0,kb,f,0,kv,f,0,lf,f,0,lz,f,0,mi,f,0,n2,f,0,nm,f,0,o5,f,0,op,f,0,p9,f,0,ps,f,0,qc,f,0,qw,f,0,rf,f,0,rs,0","m":9,"t":135},{"c":4,"h":6,"k":"18,5;17,23;6,14;4,16;2,11;13,15;12,9;20,8|b4,m8,0,ak,m3,q,a5,lg,19,9r,kl,1a,9c,jr,1b,8y,ix,1d,8j,i4,1g,85,ha,1i,7s,gf,1l,7f,fl,1n,70,es,1j,6k,e0,1a,65,d8,13,5l,ci,19,59,bn,1b,5b,aq,1e,5b,9t,1f,5d,8x,16,5f,81,x,5h,76,o,5j,6a,f,5k,5k,0,5k,m8,0,64,m3,f,6t,ly,f,7h,ls,f,85,lm,f,8u,lg,f,9i,la,f,a6,l4,f,av,l8,f,bh,lk,g,bx,m3,g,cd,mn,f,ct,n6,f,d9,np,f,dp,o8,f,e5,or,f,el,pa,f,f1,pt,f,fh,qd,f,fx,qw,f,gd,rf,f,go,rs,0,b4,5k,0,az,5y,p,al,6g,18,a0,72,16,9h,7n,18,8x,88,1b,8e,8t,1e,7u,9d,1h,7b,9y,1k,6r,ai,1o,67,b3,1p,5z,bo,1b,6e,cb,y,6z,cv,13,7j,df,14,82,dz,16,8l,ei,18,95,f2,1a,9o,fl,14,a8,g0,r,as,gf,f,b4,go,0,0,5k,0,t,68,f,1p,6y,f,2k,7n,g,3g,8d,h,4c,93,i,57,9s,j,63,ah,p,6w,b7,y,6x,c2,1r,69,cy,1z,5o,du,1w,53,ep,1r,4i,fl,1n,3x,gh,1k,3c,hc,1d,2r,i7,16,26,j2,z,1l,jx,s,10,ks,m,f,lm,f,0,m8,0,b4,0,0,b1,l,f,aw,1a,f,as,1z,f,ao,2n,f,ak,3c,f,ag,41,f,ac,4q,f,a7,5f,f,a3,64,f,ah,6q,f,b3,74,f,bo,7j,f,c9,7y,f,cu,8c,f,de,8r,f,dz,96,f,ek,9l,f,f5,a0,f,fp,af,f,ga,au,f,go,b4,0,5k,go,0,58,g4,f,57,fr,s,5o,fl,19,6b,fh,18,6v,fg,v,7i,fd,q,84,fa,l,8q,f7,g,9d,f4,f,a0,f5,f,an,fb,f,b9,fg,f,bw,fl,f,ci,fq,f,d5,fv,f,dr,g0,f,ee,g6,f,f0,gb,f,fn,gg,f,g9,gl,f,go,go,0,0,go,0,h,go,f,11,go,f,1m,gp,g,27,gp,i,2r,gp,k,3c,gq,m,3x,gq,o,4h,gr,t,51,gr,y,5m,go,z,61,gb,p,64,ft,f,5z,f8,f,5v,ep,f,5s,e5,f,5p,dm,f,5m,d2,f,5m,ci,f,5l,by,f,5k,be,f,5k,b4,0,0,rs,0,-3,r3,f,-7,qa,f,-b,ph,f,-e,oo,f,-i,nv,f,-m,n2,f,-q,ma,g,-q,lg,f,-q,kn,f,-q,ju,f,-q,j1,f,-q,i8,f,-q,hf,f,-p,gm,g,-m,ft,f,-i,f0,f,-e,e7,f,-b,de,f,-7,cl,f,-3,bs,f,0,b4,0","m":9,"t":135},{"c":4,"h":6,"k":"17,18;20,12;9,4;15,6;5,1;14,2;22,11;8,10|5k,m8,0,5m,m8,f,5w,m8,f,66,m8,f,6g,m8,f,6r,m8,f,71,m8,f,7b,m8,f,7m,m8,f,7w,m8,f,86,m8,f,8h,m8,f,8r,m8,f,91,m8,f,9c,m8,f,9m,m8,f,9w,m8,f,a7,m8,f,ah,m8,f,ar,m8,f,b2,m8,f,b4,m8,0,0,rs,0,0,rf,f,0,qv,f,0,qb,f,0,ps,f,0,p8,f,0,oo,f,0,o5,f,0,nl,f,0,n1,f,0,mh,f,0,ly,f,0,le,f,0,ku,f,0,kb,f,0,jr,f,0,j7,f,0,io,f,0,i4,f,0,hk,f,0,h1,f,0,go,0,5k,b4,0,5g,b0,f,57,ap,f,4x,af,f,4m,a5,f,4c,9v,f,42,9l,f,3s,9b,f,3i,90,f,37,8q,f,2x,8g,f,2n,86,f,2d,7w,f,23,7m,f,1t,7c,f,1i,72,f,18,6s,f,y,6i,f,o,68,f,e,5y,f,3,5n,f,0,5k,0,go,go,0,fy,gh,f,f5,ga,k,ed,g2,r,dk,fv,y,cr,fn,16,bz,fd,19,bh,f2,p,b1,ek,f,av,du,f,aq,d5,f,al,cf,f,ag,bq,f,ab,b0,f,ae,ab,f,ai,9l,f,am,8w,f,aq,86,f,au,7h,f,ay,6r,f,b1,61,f,b4,5k,0,5k,5k,0,5v,5h,f,69,5d,f,6o,59,f,73,55,f,7i,50,f,7u,4r,m,80,4g,v,7y,44,15,7u,3r,1c,7n,3e,1d,7f,33,18,78,2r,15,71,2f,11,6u,23,y,6n,1s,u,6f,1g,r,68,14,o,61,s,l,5u,g,i,5n,4,f,5k,0,0,b4,go,0,bu,g1,f,ch,f7,f,ch,ec,15,c2,di,1g,bc,cr,1b,an,bz,1a,a0,b8,16,9l,ab,11,96,9e,13,8r,8g,15,8c,7j,16,7y,6m,17,7j,5p,19,74,4s,19,75,40,o,7v,3c,f,8k,2m,g,99,1x,f,9x,18,f,am,j,f,b4,0,0,b4,rs,0,b5,qx,f,b7,py,i,b8,p0,o,b9,o1,t,bb,n3,y,bb,m5,13,bb,l6,15,ba,k7,17,ba,j8,1a,b9,ia,1d,b9,hb,1g,b9,gc,1j,b8,fe,1m,bd,eh,1d,bp,dy,k,cl,dg,g,dg,cy,g,eb,ch,f,f6,bz,f,g0,bi,f,go,b4,0,0,b4,0,h,b3,f,13,b3,g,1o,b2,k,2a,b1,o,2v,b0,s,3h,b0,w,43,az,10,4o,ay,14,5a,ax,18,5v,aw,1b,6h,au,1f,73,at,1i,7p,as,1m,8a,aq,1p,8w,ap,1t,9h,ao,1y,a3,an,1x,al,aq,1k,ay,av,12,b7,b0,j,b4,b4,0","m":10,"t":140},{"c":5,"h":6,"k":"24,13;16,26;18,11;20,21;27,25;28,12;14,23;5,1|m8,m8,0,ln,ly,f,kz,ln,h,kb,lb,m,jo,l0,r,j0,ko,w,ic,kd,12,ho,k1,17,h0,jp,1a,gh,jb,y,ge,iq,j,gm,i1,f,gv,hd,n,h0,gp,u,gy,fy,q,gw,f8,o,gv,ei,l,gt,ds,k,gs,d2,i,gq,cc,g,gp,bm,f,go,b4,0,5k,go,0,68,h5,f,6y,ho,f,7o,i6,f,8e,ip,f,94,j8,f,9u,jr,f,al,ka,f,bb,kt,g,bs,lg,t,bg,m7,1d,at,mo,18,a9,n7,13,9p,nq,10,96,o9,x,8m,os,u,82,pc,q,7j,pv,n,6z,qe,l,6f,qx,i,5w,rh,f,5k,rs,0,go,go,0,g7,gi,f,fn,gc,f,f3,g3,f,ek,ft,f,e1,fj,f,dh,f9,f,cy,ez,f,ce,eo,f,bv,ee,f,bc,e4,f,as,du,f,a9,dk,f,9p,da,f,96,d0,f,8n,cq,f,83,cg,f,7k,c5,f,70,bv,f,6h,bl,f,5y,bb,f,5k,b4,0,0,m8,0,2,m8,f,c,m8,f,m,m8,f,x,m8,f,17,m8,f,1h,m8,f,1s,m8,f,22,m8,f,2c,m8,f,2n,m8,f,2x,m8,f,37,m8,f,3i,m8,f,3s,m8,f,43,m8,f,4d,m8,f,4n,m8,f,4y,m8,f,58,m8,f,5i,m8,f,5k,m8,0,b4,rs,0,aq,ru,f,a7,rw,f,9n,rz,f,93,s1,f,8k,s4,f,80,s6,f,7g,s9,f,6x,sb,f,6d,se,g,5t,sg,i,5a,sg,i,4q,se,g,46,sb,f,3n,s9,f,33,s6,f,2j,s4,f,20,s1,f,1g,rz,f,w,rw,f,d,ru,f,0,rs,0,go,rs,0,fw,r0,f,f2,q5,f,e7,pb,f,dd,oh,f,cj,nm,f,bo,ms,f,au,ly,j,au,l6,1b,bu,kd,1f,cn,jk,1i,dg,is,1n,e9,i0,1r,f2,h7,1w,fq,ge,1l,fi,fi,v,en,er,u,dw,dz,q,d5,d8,m,ce,cg,j,bn,bo,f,b4,b4,0,m8,b4,0,lk,bj,f,ku,bz,i,k3,cf,o,jd,cv,u,im,db,10,hw,dr,17,h6,e7,1d,gf,en,1j,fp,f3,1q,ez,fl,1s,ep,g7,1a,f1,gt,w,fp,hb,11,ga,hs,1a,gv,i9,1a,hb,is,t,hb,jh,f,h4,k9,f,gy,kz,f,gs,lq,f,go,m8,0,0,5k,0,4,5g,f,e,56,f,o,4w,f,y,4m,f,19,4b,f,1j,41,f,1t,3r,f,23,3h,f,2d,37,f,2n,2x,f,2x,2n,f,37,2d,f,3i,22,f,3s,1s,f,42,1i,f,4c,18,f,4m,y,f,4w,o,f,56,e,f,5h,3,f,5k,0,0","m":10,"t":140},{"c":5,"h":6,"k":"21,27;5,1;12,8;4,3;6,0;10,26;28,22;23,7;16,24|5k,m8,0,62,lz,f,6m,lo,f,77,ld,f,7s,l3,f,8d,kt,f,8y,kj,f,9k,kh,n,9x,ko,16,a0,l6,1j,a0,lt,1l,a2,me,1o,a6,my,1h,aa,nj,1c,ae,o3,17,ai,oo,12,am,p8,x,aq,pt,t,au,qd,o,ay,qy,k,b2,ri,f,b4,rs,0,0,5k,0,5,5f,f,f,55,f,p,4v,i,z,4l,l,19,4b,o,1j,41,s,1t,3r,w,23,3h,10,2d,37,14,2n,2x,19,2x,2n,18,37,2d,14,3h,23,10,3r,1t,w,41,1j,s,4c,18,p,4m,y,m,4w,o,j,56,e,h,5g,4,f,5k,0,0,b4,b4,0,b8,b0,f,bi,aq,f,bs,ag,f,c2,a6,f,cd,9v,f,cn,9l,f,cx,9b,f,d7,91,f,dh,8r,f,dr,8h,f,e1,87,f,eb,7x,f,em,7m,f,ew,7c,f,f6,72,f,fg,6s,f,fq,6i,f,g0,68,f,ga,5y,f,gl,5n,f,go,5k,0,m8,0,0,m6,0,f,lw,0,f,lm,0,f,lb,0,f,l1,0,f,kr,0,f,kg,0,f,k6,0,f,jw,0,f,jl,0,f,jb,0,f,j1,0,f,iq,0,f,ig,0,f,i5,0,f,hv,0,f,hl,0,f,ha,0,f,h0,0,f,gq,0,f,go,0,0,5k,5k,0,5g,5g,f,56,56,f,4w,4w,f,4l,4m,f,4b,4c,f,41,42,f,3r,3s,f,3g,3i,f,36,38,f,2w,2y,f,2m,2n,f,2c,2d,f,22,23,f,1s,1t,f,1i,1j,f,18,18,f,y,y,f,o,o,f,d,e,f,3,3,f,0,0,0,0,b4,0,n,bw,f,1c,cr,f,21,dm,f,2q,eg,f,3f,fb,f,45,g6,f,4u,h0,f,5l,ht,f,6j,ie,f,7j,iv,h,8i,jb,o,9c,jt,15,9e,kp,1x,8v,lo,1w,8d,ml,1m,7w,nh,1d,7e,oe,14,6w,pb,w,6f,q7,n,5x,r4,f,5k,rs,0,go,rs,0,gk,ro,f,ga,re,f,g0,r4,f,fq,qv,f,fg,ql,f,f6,qb,f,ev,q1,f,el,pr,f,eb,ph,f,e1,p7,f,dr,ox,f,dh,on,f,d6,od,f,cw,o3,f,cm,nt,f,cc,nj,f,c2,n9,f,bs,mz,f,bi,mp,f,b8,me,f,b4,m8,0,go,m8,0,fi,m2,f,e8,lx,f,cz,lr,h,bp,lm,j,ag,lj,k,98,le,w,8h,kj,1d,8h,jf,1q,8r,ic,1h,8z,h9,1d,96,g6,1a,9d,f2,16,9k,dz,12,9s,cw,y,9z,bs,v,a6,ap,s,ad,9m,o,ak,8i,l,as,7f,i,az,6c,f,b4,5k,0,5k,go,0,67,h5,l,6o,hu,14,71,ir,1b,7f,jp,1a,7t,km,1b,8c,lf,14,91,m3,u,9z,mb,r,aw,ma,13,bv,ma,16,ct,mb,15,ds,mc,14,er,md,14,fq,md,12,go,mc,y,hn,mc,u,il,mb,q,jk,ma,m,ki,m9,i,lh,m9,f,m8,m8,0","m":11,"t":150},{"c":5,"h":6,"k":"17,7;5,8;21,11;3,9;22,13;6,10;12,24;29,27;0,1|b4,go,0,ax,gn,l,as,gk,17,aw,g5,1o,b2,fm,1y,b1,f0,24,az,ed,27,ax,dr,2a,av,d5,2b,at,ci,2d,as,bw,2a,at,bb,22,au,aq,1v,av,a4,1o,ax,9j,1h,ay,8y,1a,az,8c,14,b0,7r,x,b1,75,r,b2,6k,l,b3,5y,f,b4,5k,0,0,5k,0,u,61,f,1p,6k,o,2l,72,y,3g,7l,18,4d,85,16,59,8o,11,65,98,x,71,9r,t,7x,aa,p,8t,au,m,9p,bd,i,al,bx,f,bl,c5,f,cc,b7,f,cz,ac,f,dm,9i,f,e9,8o,f,ex,7t,f,fk,6z,f,g8,65,f,go,5k,0,5k,m8,0,5z,ln,f,6f,kz,g,6w,kc,k,7d,jo,p,7t,j0,u,8a,id,z,8r,hp,14,97,h1,19,9o,ge,1e,a5,fq,1j,al,f3,1d,ak,ek,o,9z,e6,g,9e,ds,h,8t,dd,h,88,cz,g,7n,ck,g,73,c6,f,6i,br,f,5x,bd,f,5k,b4,0,go,0,0,gs,4,f,h2,e,f,hc,o,f,hm,y,f,hx,19,f,i7,1j,f,ih,1t,f,ir,23,f,j1,2d,f,jb,2n,f,jl,2x,f,jv,37,f,k6,3i,f,kg,3s,f,kq,42,f,l0,4c,f,la,4m,f,lk,4w,f,lu,56,f,m5,5h,f,m8,5k,0,b4,m8,0,b8,li,f,bc,ko,f,bg,jv,f,bk,j1,f,bo,i7,f,bs,he,f,bv,gk,f,bv,fp,f,bj,ey,g,ba,e6,i,aw,dg,k,an,cs,w,av,ca,1j,bl,c1,1v,ce,bx,1k,d5,bs,1c,dx,bn,13,eo,bi,v,ff,bc,n,g6,b7,f,go,b4,0,5k,5k,0,5g,5p,f,57,5z,f,4x,6a,f,4o,6l,f,4f,6w,f,45,77,f,3w,7i,f,3n,7u,f,3c,83,f,32,8d,f,2r,8m,f,2h,8w,f,26,96,f,1v,9f,f,1l,9p,f,1a,9y,f,z,a8,f,p,ai,f,e,ar,f,4,b1,f,0,b4,0,b4,b4,0,be,bc,y,bq,cl,10,b8,de,1h,ad,e0,1g,9o,ep,19,9v,fc,l,au,fp,p,bm,g2,17,ch,gk,15,db,h1,11,e5,hj,z,ez,i0,w,ft,ii,u,gn,iz,r,hh,jg,p,ib,jy,n,j5,kf,l,jz,kx,j,kt,le,h,ln,lw,f,m8,m8,0,m8,rs,0,lv,rs,f,lb,rs,f,kr,rs,f,k8,rs,f,jo,rs,f,j4,rs,f,il,rs,f,i1,rs,f,hh,rs,f,gx,rs,f,ge,rs,f,fu,rs,f,fa,rs,f,er,rs,f,e7,rs,f,dn,rs,f,d4,rs,f,ck,rs,f,c0,rs,f,bh,rs,f,b4,rs,0,0,0,0,2,0,f,c,0,f,m,0,f,x,0,f,17,0,f,1h,0,f,1s,0,f,22,0,f,2c,0,f,2n,0,f,2x,0,f,37,0,f,3i,0,f,3s,0,f,43,0,f,4d,0,f,4n,0,f,4y,0,f,58,0,f,5i,0,f,5k,0,0","m":11,"t":155},{"c":5,"h":6,"k":"9,2;28,16;17,8;3,11;22,25;26,12;4,13;1,0;10,5|m8,5k,0,lr,5g,f,l5,5c,f,kj,57,f,jx,53,f,jb,4y,f,ip,4s,f,i3,4l,f,hi,4f,f,gw,48,f,gb,41,f,fp,3u,f,f5,3l,f,eo,36,f,e8,2r,f,dr,2c,f,da,1x,f,cu,1j,f,cd,14,f,bw,p,f,bg,a,f,b4,0,0,go,rs,0,gf,qj,f,g6,p7,h,fx,nu,m,fo,mi,s,ff,l6,y,f6,ju,14,ex,ih,1a,eo,h5,1g,ef,ft,1m,e5,eh,1s,dx,d4,1s,d0,ch,1p,bv,c6,1v,b1,ca,13,aa,d0,r,9g,do,r,8m,eb,o,7s,ey,l,6y,fl,i,64,g9,f,5k,go,0,b4,go,0,bb,g9,f,bl,fp,f,bv,f6,f,c5,em,f,ce,e2,f,co,di,f,cy,cy,f,dd,ci,f,du,c4,f,e3,bk,f,ec,b0,f,ek,ag,f,et,9w,f,f2,9b,f,fb,8r,f,fj,87,f,fs,7n,f,g1,73,f,g9,6i,f,gi,5y,f,go,5k,0,go,0,0,gd,x,f,g1,1v,p,fp,2u,11,fd,3t,19,ez,4t,17,el,5t,17,e7,6t,18,du,7t,18,dg,8t,19,d2,9t,19,cp,at,1a,cd,bt,14,c4,cs,x,be,d7,1i,ag,cy,1s,9l,cl,1h,8r,ca,17,7w,bz,x,71,bn,o,66,bc,f,5k,b4,0,b4,m8,0,ao,md,f,a4,mk,f,9j,mr,f,8y,my,f,8d,n5,f,7u,nf,f,7b,nq,f,6r,o1,f,68,ob,f,5p,om,f,56,ow,f,4n,p7,f,44,pi,f,3k,ps,f,31,q3,f,2i,qe,f,1z,qo,f,1g,qz,f,x,ra,f,e,rk,f,0,rs,0,5k,rs,0,63,qy,f,6o,q3,l,79,p7,s,7u,ob,10,8f,nf,18,8z,mj,18,9j,lm,16,a4,kp,14,ao,js,12,b9,iw,11,bt,hz,10,ce,h2,z,cy,g6,x,dj,f9,x,e3,ec,w,em,df,14,ed,cf,1b,dh,bu,15,cv,bg,f,bv,b8,f,b4,b4,0,m8,0,0,ln,w,f,kz,1u,k,kc,2t,s,jp,3r,10,j2,4q,18,if,5o,1d,hs,6n,1j,h5,7m,1p,gh,8l,1v,fu,9j,21,f7,ai,27,ek,bh,2d,dx,cg,2j,d9,de,2g,d4,dn,1f,dm,d7,u,e7,cv,f,ex,cd,g,fl,bw,g,g9,bf,f,go,b4,0,5k,0,0,5i,0,f,58,0,f,4y,0,f,4n,0,f,4d,0,f,43,0,f,3s,0,f,3i,0,f,38,0,f,2x,0,f,2n,0,f,2d,0,f,22,0,f,1s,0,f,1h,0,f,17,0,f,x,0,f,m,0,f,c,0,f,2,0,f,0,0,0,0,b4,0,0,b2,f,0,as,f,0,ai,f,0,a7,f,0,9x,f,0,9n,f,0,9c,f,0,92,f,0,8s,f,0,8h,f,0,87,f,0,7x,f,0,7m,f,0,7c,f,0,71,f,0,6r,f,0,6h,f,0,66,f,0,5w,f,0,5m,f,0,5k,0","m":11,"t":155},{"c":5,"h":6,"k":"29,13;8,24;3,6;20,25;5,0;22,11;16,14;2,10;28,26;21,18|m8,rs,0,m0,r2,f,lq,q8,g,lg,pf,h,l7,ol,k,kx,ns,m,ko,mz,q,ke,m5,u,k5,lc,y,jv,kj,13,jm,jq,19,jd,iw,1c,j4,i2,1b,iv,h8,1b,im,gf,1c,id,fl,1d,i4,er,1f,hv,dx,1h,hk,d5,19,h9,ch,u,gy,br,f,go,b4,0,go,5k,0,fk,5p,f,ex,6c,11,en,7b,1j,ed,8e,1p,e1,9g,1o,dj,af,1j,d2,be,1e,cs,cd,10,d6,d8,f,e3,dx,f,ey,em,i,ft,fa,l,gn,fy,p,hf,gq,o,i4,hk,l,iu,id,j,jk,j7,h,ka,k0,g,l0,kt,g,lp,ln,f,m8,m8,0,go,0,0,gl,13,f,gi,28,h,gf,3e,n,gc,4j,u,g9,5p,10,fu,6r,u,f2,7i,p,ea,89,t,dj,91,11,cw,9u,1c,c4,af,11,bi,a1,f,au,9e,f,a5,8w,g,9g,8e,f,8r,7w,f,82,7e,f,7d,6w,f,6o,6d,f,60,5v,f,5k,5k,0,0,m8,0,0,ma,f,0,mk,f,0,mu,f,0,n5,f,0,nf,f,0,np,f,0,o0,f,0,oa,f,0,ok,f,0,ov,f,0,p5,f,0,pf,f,0,pq,f,0,q0,f,0,qb,f,0,ql,f,0,qv,f,0,r6,f,0,rg,f,0,rq,f,0,rs,0,0,5k,0,0,5i,f,0,58,f,0,4y,f,0,4n,f,0,4d,f,0,43,f,0,3s,f,0,3i,f,0,38,f,0,2x,f,0,2n,f,0,2d,f,0,22,f,0,1s,f,0,1h,f,0,17,f,0,x,f,0,m,f,0,c,f,0,2,f,0,0,0,b4,m8,0,bg,l8,f,bs,k5,j,c5,j2,q,ci,hz,y,cu,gw,16,d5,fs,17,dg,en,18,dq,dj,19,du,cg,v,dg,bg,j,d0,ag,f,ci,9h,f,bt,9c,15,az,9q,1a,a6,9y,12,9c,a5,x,8j,ad,t,7p,ak,o,6w,as,j,62,az,f,5k,b4,0,5k,go,0,6d,gt,f,7a,gz,f,87,h4,f,93,ha,f,a0,hg,g,au,hh,u,bk,h6,1c,c8,gr,1s,cz,gb,22,dt,fw,1w,el,fh,1o,fd,f1,1h,g5,en,17,gw,e9,v,ho,du,l,ig,dd,j,j8,cw,i,k1,cg,h,kt,bz,g,ll,bi,f,m8,b4,0,b4,0,0,am,f,f,a1,w,f,9g,1e,f,8v,1v,f,89,2d,f,7o,2v,f,73,3c,f,6i,3u,f,5x,4b,f,5c,4t,g,4s,5c,g,4b,5x,f,3t,6j,f,3c,74,f,2u,7p,f,2c,8a,f,1v,8v,f,1d,9h,f,w,a2,f,e,an,f,0,b4,0,go,rs,0,gb,rs,f,fr,rs,f,f7,rs,f,eo,rs,f,e4,rs,f,dk,rs,f,d1,rs,f,ch,rs,f,bx,rs,f,bd,rs,f,au,rs,f,aa,rs,f,9q,rs,f,97,rs,f,8n,rs,f,83,rs,f,7k,rs,f,70,rs,f,6g,rs,f,5x,rs,f,5k,rs,0,5k,m8,0,5x,lt,f,6c,lb,g,6s,kt,k,77,kb,n,7n,js,r,82,ja,v,8i,is,z,8x,ia,14,9d,hs,18,9s,ha,1c,aa,gu,18,au,gj,z,bh,gg,s,c4,gf,l,cs,gd,f,dh,gg,f,e5,gi,f,et,gk,f,fi,gm,f,g6,go,f,go,go,0","m":12,"t":165},{"c":5,"h":6,"k":"16,23;21,13;10,18;15,20;24,12;26,22;29,27;14,11;9,4;5,2|5k,go,0,60,fu,f,6h,ex,f,6y,e0,f,7f,d3,f,7w,c6,f,8e,bb,m,8w,bc,1m,9q,ca,1i,ah,cw,18,ba,di,13,c1,e5,14,cp,ev,17,d9,fo,1c,dq,gk,1d,e6,hg,18,em,ia,11,f2,j5,w,fi,k0,q,fz,kw,l,gf,lr,f,go,m8,0,5k,m8,0,61,lr,f,6l,l7,i,75,kn,l,7p,k4,p,89,jk,u,8t,j0,z,9d,ih,14,9w,hx,1a,ag,he,1g,b0,gu,1n,bj,gb,1u,c3,fs,21,cl,f6,24,d3,el,20,dl,e0,1s,e3,dg,1l,el,cv,1e,f3,ca,18,fn,bt,v,g6,bg,f,go,b4,0,0,b4,0,q,bc,f,1j,bm,g,2c,bw,i,35,c5,l,3y,cf,p,4r,cp,t,5k,cy,y,6d,d8,13,75,dh,19,7y,dq,15,8r,e0,z,9k,e9,t,ad,ei,p,b6,er,l,bz,f1,h,cs,fa,f,dl,fl,f,ee,fv,f,f7,g5,f,g0,gf,f,go,go,0,0,go,0,0,gq,f,0,h0,f,0,ha,f,0,hl,f,0,hv,f,0,i5,f,0,ig,f,0,iq,f,0,j0,f,0,jb,f,0,jl,f,0,jv,f,0,k6,f,0,kg,f,0,kr,f,0,l1,f,0,lb,f,0,lm,f,0,lw,f,0,m6,f,0,m8,0,m8,m8,0,lf,lq,f,kk,l6,f,jp,km,f,iu,k2,f,hy,ji,f,h3,iy,f,g8,ie,f,fc,hu,f,eh,ha,f,dl,gr,h,cs,g7,s,c4,fj,16,bm,er,1m,b8,du,1x,au,cx,21,ae,c0,20,9t,b6,1u,9a,ak,19,9i,ai,f,ai,at,f,b4,b4,0,5k,rs,0,5o,ro,f,5y,re,f,68,r4,f,6i,qu,f,6t,qj,f,73,q9,f,7d,pz,f,7n,pp,f,7x,pf,f,87,p5,f,8h,ov,f,8r,ol,f,92,oa,f,9c,o0,f,9m,nq,f,9w,ng,f,a6,n6,f,ag,mw,f,aq,mm,f,b1,mb,f,b4,m8,0,m8,rs,0,lv,rs,f,lb,rs,f,kr,rs,f,k8,rs,f,jo,rs,f,j4,rs,f,il,rs,f,i1,rs,f,hh,rs,f,gx,rs,f,ge,rs,f,fu,rs,f,fa,rs,f,er,rs,f,e7,rs,f,dn,rs,f,d4,rs,f,ck,rs,f,c0,rs,f,bh,rs,f,b4,rs,0,m8,b4,0,lh,ba,f,kn,bh,f,jt,bn,f,iz,bu,f,i5,c1,f,hb,c7,f,gg,ce,f,fm,cl,f,es,cn,f,dx,co,f,d2,cp,f,c7,cq,f,bc,cq,f,ah,cr,f,9o,cu,m,8v,cw,x,82,cw,19,7c,cg,19,6p,c0,t,63,bj,f,5k,b4,0,m8,5k,0,m8,5i,f,m8,58,f,m8,4y,f,m8,4n,f,m8,4d,f,m8,43,f,m8,3s,f,m8,3i,f,m8,38,f,m8,2x,f,m8,2n,f,m8,2d,f,m8,22,f,m8,1s,f,m8,1h,f,m8,17,f,m8,x,f,m8,m,f,m8,c,f,m8,2,f,m8,0,0,0,5k,0,v,69,f,1s,70,f,2p,7r,k,3n,8i,o,4k,98,t,5h,9z,y,6f,aq,13,7c,bh,18,89,c8,1a,9d,bz,n,aa,az,16,a4,9o,11,a8,8j,x,ac,7e,v,ag,69,s,al,54,p,ap,40,n,at,2v,k,ax,1q,h,b2,l,f,b4,0,0","m":12,"t":170},{"c":5,"h":6,"k":"22,29;21,25;9,18;0,5;27,24;16,8;28,17;7,2;6,10;3,14|b4,m8,0,be,ld,f,bq,kf,p,c1,ji,10,cc,ik,1c,cs,hn,14,dp,hf,l,ep,hf,u,fg,ho,1e,fw,io,1i,gf,jh,1k,h0,ka,1h,hj,l2,1f,i3,lu,1d,in,mn,1b,j7,nf,17,jq,o7,11,ka,oz,v,ku,ps,q,ld,qk,k,lx,rc,f,m8,rs,0,5k,m8,0,5g,mc,f,56,mm,f,4w,mw,f,4m,n6,f,4b,nh,f,41,nr,f,3r,o1,f,3h,ob,f,37,ol,f,2x,ov,f,2n,p5,f,2d,pf,f,22,pq,f,1s,q0,f,1i,qa,f,18,qk,f,y,qu,f,o,r4,f,e,re,f,3,rp,f,0,rs,0,m8,5k,0,lo,67,f,l3,6w,k,kh,7l,s,jw,8a,10,ja,8z,18,io,9o,17,i2,ad,14,hg,b2,12,gt,br,10,g7,cg,13,fp,d5,1e,fc,dy,1q,f6,et,21,f4,fp,26,f1,gm,24,et,hh,1y,en,i9,1l,f4,ih,r,fs,hu,f,gc,h4,f,go,go,0,0,0,0,0,2,f,0,c,f,0,m,f,0,x,f,0,17,f,0,1h,f,0,1s,f,0,22,f,0,2c,f,0,2n,f,0,2x,f,0,37,f,0,3i,f,0,3s,f,0,43,f,0,4d,f,0,4n,f,0,4y,f,0,58,f,0,5i,f,0,5k,0,b4,rs,0,bh,rj,f,c0,r7,f,ci,qu,f,d0,qi,f,di,q6,f,e0,pu,f,ei,ph,f,f0,p5,f,fi,ot,f,g0,oh,f,gi,o4,f,h4,nx,f,ho,no,f,i9,ng,f,iu,n8,f,jf,n1,f,k0,mv,f,km,mp,f,l7,mj,f,lt,mc,f,m8,m8,0,5k,go,0,6k,gx,f,7n,h6,f,8q,hg,f,9t,hq,f,aw,hz,f,bz,i9,f,d1,ii,g,dq,i7,1e,e3,h3,1l,es,g7,1b,fh,fd,1a,g3,eh,1i,gg,dh,1t,gk,ce,1x,gn,bb,1t,gq,a9,1m,gu,96,1h,gx,84,1c,h0,73,11,gv,66,f,go,5k,0,go,rs,0,gp,r3,f,gp,qc,l,gq,pk,u,gq,os,12,gq,o0,18,gp,n8,13,go,mg,z,gn,ln,w,gl,kv,s,gk,k3,p,gk,ja,p,gh,ii,v,gc,hs,14,g1,h3,14,fc,gu,s,em,go,l,dv,gl,k,d4,gm,i,cd,gn,g,bm,gn,f,b4,go,0,b4,5k,0,b4,5i,f,b4,58,f,b4,4y,f,b4,4n,f,b4,4d,f,b4,43,f,b4,3s,f,b4,3i,f,b4,38,f,b4,2x,f,b4,2n,f,b4,2d,f,b4,22,f,b4,1s,f,b4,1h,f,b4,17,f,b4,x,f,b4,m,f,b4,c,f,b4,2,f,b4,0,0,5k,5k,0,5g,5o,f,56,5y,f,4w,68,f,4m,6i,f,4b,6t,f,41,73,f,3r,7d,f,3h,7n,f,37,7x,f,2x,87,f,2n,8h,f,2d,8r,f,22,92,f,1s,9c,f,1i,9m,f,18,9w,f,y,a6,f,o,ag,f,e,aq,f,3,b1,f,0,b4,0,go,0,0,gl,l,f,gi,1a,f,gf,1z,f,gb,2o,f,g8,3d,f,g5,42,g,g2,4r,g,fy,5g,h,fy,66,g,g4,6u,f,gg,7h,f,h0,7w,f,hm,89,f,i8,8m,f,it,8z,f,jf,9d,f,k0,9q,f,km,a4,f,l8,ah,f,lt,av,f,m8,b4,0","m":13,"t":175},{"c":5,"h":6,"k":"9,4;10,21;14,24;25,11;15,5;8,18;3,2;23,28;29,26;7,17;20,12|m8,5k,0,m8,5i,f,m8,58,f,m8,4y,f,m8,4n,f,m8,4d,f,m8,43,f,m8,3s,f,m8,3i,f,m8,38,f,m8,2x,f,m8,2n,f,m8,2d,f,m8,22,f,m8,1s,f,m8,1h,f,m8,17,f,m8,x,f,m8,m,f,m8,c,f,m8,2,f,m8,0,0,0,b4,0,b,bj,f,p,c2,j,13,cl,o,1h,d3,u,1v,dm,10,29,e5,16,2n,en,1c,31,f6,1j,3f,fo,1p,3t,g7,1r,49,gp,1p,4p,h7,1n,54,hp,1l,5j,i8,1k,5x,iq,1e,64,ja,13,64,jv,r,5z,kh,i,5t,l4,f,5m,lr,f,5k,m8,0,m8,b4,0,m8,bh,f,m8,c1,f,m8,cl,f,m8,d4,f,m8,do,f,m8,e8,f,m8,er,f,m8,fb,f,m8,fv,f,m8,gf,f,m8,gy,f,m8,hi,f,m8,i2,f,m8,il,f,m8,j5,f,m8,jp,f,m8,k8,f,m8,ks,f,m8,lc,f,m8,lv,f,m8,m8,0,0,rs,0,r,r6,f,1l,qi,f,2f,pt,f,39,p5,f,42,oh,f,4w,ns,f,5q,n3,h,6c,m7,m,6m,l5,q,6w,k4,u,73,j2,y,7b,i0,11,7j,gy,15,7q,fx,19,7z,ev,14,7r,dx,q,7a,cz,s,6i,cq,1e,5l,cj,13,5a,bv,f,5k,b4,0,0,go,0,v,gi,f,1t,ga,i,2s,g3,p,3q,fw,w,4n,fp,16,5l,fi,1e,6k,fb,1f,73,ek,17,6p,dl,f,6g,cl,f,67,bq,s,5l,b2,z,4w,ag,t,49,9t,r,3l,95,p,2y,8i,n,2b,7v,l,1n,77,j,10,6k,h,d,5x,f,0,5k,0,go,5k,0,go,5x,f,go,6h,f,go,71,f,go,7k,f,go,84,f,go,8o,f,go,97,f,go,9r,f,go,ab,f,go,av,f,go,be,f,go,by,f,go,ci,f,go,d1,f,go,dl,f,go,e5,f,go,eo,f,go,f8,f,go,fs,f,go,gb,f,go,go,0,go,0,0,gm,0,f,gc,0,f,g2,0,f,fr,0,f,fh,0,f,f7,0,f,ew,0,f,em,0,f,ec,0,f,e1,0,f,dr,0,f,dh,0,f,d6,0,f,cw,0,f,cl,0,f,cb,0,f,c1,0,f,bq,0,f,bg,0,f,b6,0,f,b4,0,0,go,m8,0,go,ma,f,go,mk,f,gn,mu,f,gn,n5,f,gn,nf,f,gm,np,f,gm,o0,f,gm,oa,f,gl,ok,f,gl,ov,f,gk,p5,f,gk,pg,f,gk,pq,f,gk,q0,f,gl,qb,f,gl,ql,f,gm,qv,f,gn,r6,f,gn,rg,f,go,rq,f,go,rs,0,m8,rs,0,l5,rf,f,k0,r0,l,iu,qm,t,hp,q8,11,gj,pt,19,fd,pf,1c,e7,p1,1g,d1,om,1k,bv,o8,1o,ap,nu,1s,9j,nf,1x,8d,n1,21,78,mn,26,62,m8,2a,50,m4,1t,4w,mx,11,54,o1,18,58,p2,x,5d,q2,o,5h,r2,f,5k,rs,0,b4,5k,0,as,64,f,af,6r,i,a2,7e,n,9p,81,t,9b,8o,z,8y,9b,15,8l,9y,1b,88,al,1h,7u,b8,1o,7h,bv,1u,74,ci,20,6r,d5,27,6h,du,26,6a,ed,1o,66,el,l,76,f7,f,83,fi,f,8y,fu,g,9s,g6,f,an,gi,f,b4,go,0,0,m8,0,z,mf,f,1z,mm,u,2z,mu,1a,40,n1,1p,50,n8,23,5x,my,1h,5s,lr,18,5g,kq,17,5a,jp,z,5a,in,r,5e,hl,o,5h,gj,l,5k,fi,i,5l,eg,s,62,dn,18,76,dm,1n,82,d2,1i,8w,cj,13,9q,c0,r,ak,bh,f,b4,b4,0","m":13,"t":185},{"c":5,"h":6,"k":"2,3;22,10;8,5;9,23;29,17;11,18;6,7;12,21;1,15;24,26;28,19|b4,0,0,b6,0,f,bg,0,f,bq,0,f,c1,0,f,cb,0,f,cl,0,f,cw,0,f,d6,0,f,dg,0,f,dr,0,f,e1,0,f,eb,0,f,em,0,f,ew,0,f,f7,0,f,fh,0,f,fr,0,f,g2,0,f,gc,0,f,gm,0,f,go,0,0,b4,m8,0,c4,ls,f,d7,lb,f,e9,kx,o,e6,k8,1p,d5,jq,1r,c9,j8,1u,be,ip,1w,ak,i4,1s,9q,hk,1q,8w,h0,1n,82,gg,1l,77,fw,1i,6d,fc,1g,5j,es,1e,4p,e7,1c,3v,dn,1a,31,d4,11,28,ck,u,1e,c1,m,k,bh,f,0,b4,0,go,5k,0,fv,5y,f,ez,6d,f,e2,6s,f,d6,77,f,ca,7m,f,be,81,f,ah,8g,f,9l,8v,f,8p,9a,f,7t,9p,f,6x,a5,h,69,ak,13,5h,a5,1b,4s,9j,14,42,8x,10,3d,8c,v,2o,7r,r,1y,76,n,19,6l,j,j,60,f,0,5k,0,m8,5k,0,lx,6i,f,ll,7i,f,l8,8j,f,kw,9j,f,kk,ak,f,k8,bk,f,jw,cl,f,jk,dl,f,j7,em,f,iv,fm,f,ij,gn,f,i7,hn,f,hv,in,l,hj,jj,14,h7,kg,1l,gv,ld,21,gb,m9,25,fo,n3,1z,fe,nf,12,g2,mt,f,go,m8,0,m8,rs,0,lo,r8,f,l3,ql,f,kh,py,h,jv,pc,j,j9,op,l,in,o2,o,i1,ng,r,hf,mt,t,gt,m6,x,g1,lv,q,f6,lv,i,eb,lx,n,dj,lw,10,cw,lf,1a,ci,ko,16,c7,jv,13,bw,j3,10,bk,ib,15,b5,hl,18,ax,h0,o,b4,go,0,5k,b4,0,5q,ai,f,60,9t,f,6d,9j,12,6p,9y,1n,75,af,20,7s,at,1x,8e,b8,1s,90,bm,1o,9m,c0,1k,a7,cf,1h,at,ct,1d,bf,d7,19,c1,dm,15,cn,e0,11,d8,ee,x,du,et,t,eg,f7,p,f2,fl,m,fo,g0,i,g9,ge,f,go,go,0,5k,5k,0,5m,5k,f,5w,5m,f,66,5n,f,6g,5o,f,6r,5p,f,71,5p,f,7b,5p,f,7m,5o,f,7w,5o,f,86,5o,f,8h,5n,f,8r,5n,f,92,5n,f,9c,5m,f,9m,5m,f,9x,5l,f,a7,5l,f,ai,5l,f,as,5k,f,b2,5k,f,b4,5k,0,b4,b4,0,b7,bp,f,ba,cd,f,be,d2,f,bh,dr,f,bl,eg,f,bp,f5,f,bs,fu,f,bw,gi,g,bt,h7,f,bg,ht,f,aw,i7,f,ac,im,f,9s,j1,f,98,jg,f,8p,jv,f,85,ka,f,7l,kp,f,71,l4,f,6h,lj,f,5y,ly,f,5k,m8,0,5k,0,0,5r,w,f,5y,1v,k,65,2t,q,6c,3s,w,6j,4q,13,6q,5p,19,6x,6p,18,74,7o,19,7b,8n,1a,7i,9n,1b,7g,am,14,6r,bc,11,60,by,v,59,cl,p,4i,d8,j,3r,du,f,2z,ef,f,26,f1,f,1e,fm,f,m,g8,f,0,go,0,m8,m8,0,le,m3,f,kh,ly,i,jk,lt,n,io,ln,t,hr,li,y,gu,ld,13,g0,lh,1h,fg,lw,24,ep,me,27,dx,mu,1z,d5,na,1s,ce,nr,1m,bm,o7,1g,au,oo,19,a2,p4,14,9a,pk,y,8j,q1,t,7r,qh,o,6z,qy,j,67,rf,f,5k,rs,0,go,rs,0,gm,qu,f,gk,pu,l,gi,ou,t,gg,nt,12,gd,mt,19,fk,ma,19,eq,lt,1e,dx,lc,1k,d8,kt,1c,di,k1,s,eg,jm,x,fa,jb,12,g3,iy,16,gw,im,1a,hp,i9,1e,ii,hz,1a,jb,hp,11,k4,he,t,kx,h4,m,lq,gu,f,m8,go,0","m":14,"t":200}];
+
 "use strict";
 (() => {
 
@@ -323,120 +566,6 @@ function toward(a, b, d) {
 }
 
 /* =====================================================================
-   Knotenlogik
-   Kordeln sind gespannt und gerade. Jede Kreuzung hat ein Oben und ein
-   Unten: Die zuletzt bewegte Kordel liegt oben.
-   Eine Kordel, die UNTER einer anderen liegt, kommt dort nicht heraus –
-   ihr Ende lässt sich nur in Ösen setzen, von denen aus sie die Deckkordel
-   weiterhin kreuzt. Wer oben liegt, gleitet frei: Bewegt man die
-   Deckkordel weg, ist die untere frei.
-   Jeder erlaubte Zug lässt sich genau umkehren – darum ist jedes Level,
-   das aus der Lösung durch erlaubte Züge entsteht, sicher lösbar.
-   ===================================================================== */
-const TOUCH = 0.07 * 0.07;
-function pairHit(A, B, C, D) {
-  if (segCross(A, B, C, D)) return 2;
-  if (distPtSeg2(C, A, B) < TOUCH || distPtSeg2(D, A, B) < TOUCH || distPtSeg2(A, C, D) < TOUCH || distPtSeg2(B, C, D) < TOUCH) return 1;
-  return 0;
-}
-function hitPoint(A, B, C, D, h) {
-  if (h === 2) return intersect(A, B, C, D);
-  for (const [p, a, b] of [[C, A, B], [D, A, B], [A, C, D], [B, C, D]]) if (distPtSeg2(p, a, b) < TOUCH) return { x: p.x, y: p.y };
-  return { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
-}
-function makeModel(def, ends, under, z) {
-  const R = def.r;
-  return { def, R, ends: ends.map((e) => e.slice()), under: under ? Uint8Array.from(under) : new Uint8Array(R * R), z: (z || range(R)).slice() };
-}
-const cloneModel = (m) => ({ def: m.def, R: m.R, ends: m.ends.map((e) => e.slice()), under: m.under.slice(), z: m.z.slice() });
-const snapshot = (m) => ({ ends: m.ends.map((e) => e.slice()), under: Array.from(m.under), z: m.z.slice() });
-const isUnder = (m, a, b) => m.under[a * m.R + b] === 1;
-const segOf = (m, r) => [m.def.P[m.ends[r][0]], m.def.P[m.ends[r][1]]];
-function crossings(m) {
-  const out = [];
-  for (let i = 0; i < m.R; i++) for (let j = i + 1; j < m.R; j++) {
-    const [A, B] = segOf(m, i), [C, D] = segOf(m, j), h = pairHit(A, B, C, D);
-    if (!h) continue;
-    const X = hitPoint(A, B, C, D, h);
-    const lo = isUnder(m, i, j) ? i : isUnder(m, j, i) ? j : -1;
-    out.push({ a: i, b: j, x: X.x, y: X.y, under: lo, over: lo < 0 ? -1 : lo === i ? j : i });
-  }
-  return out;
-}
-const crossCount = (m) => crossings(m).length;
-// Kordeln, unter denen r liegt und die r beim Zug weiter kreuzen muss
-function blockers(m, r, e, Pnew) {
-  const other = m.def.P[m.ends[r][1 - e]], out = [];
-  for (let s = 0; s < m.R; s++) {
-    if (s === r || !isUnder(m, r, s)) continue;
-    const [C, D] = segOf(m, s);
-    if (!pairHit(Pnew, other, C, D)) out.push(s);
-  }
-  return out;
-}
-function occupied(m) { const o = new Set(); m.ends.forEach((e) => { o.add(e[0]); o.add(e[1]); }); return o; }
-function legal(m, r, e, h) {
-  const d = m.def, other = d.P[m.ends[r][1 - e]];
-  if (h === m.ends[r][e]) return false;
-  if (occupied(m).has(h)) return false;
-  if (dist(d.P[h], other) < 0.99) return false;
-  return blockers(m, r, e, d.P[h]).length === 0;
-}
-function applyMove(m, r, e, h) {
-  m.ends[r][e] = h;
-  const [A, B] = segOf(m, r), R = m.R;
-  for (let s = 0; s < R; s++) {
-    if (s === r) continue;
-    const [C, D] = segOf(m, s);
-    if (pairHit(A, B, C, D)) { if (!m.under[r * R + s]) m.under[s * R + r] = 1; }
-    else { m.under[s * R + r] = 0; m.under[r * R + s] = 0; }
-  }
-  m.z = m.z.filter((x) => x !== r); m.z.push(r);
-}
-// Kordeln, die gerade irgendetwas kreuzen
-function tangledSet(m) { const s = new Set(); for (const c of crossings(m)) { s.add(c.a); s.add(c.b); } return s; }
-// Zeichenreihenfolge: was unten liegt, zuerst
-function drawOrder(m) {
-  const R = m.R, zr = {}; m.z.forEach((r, i) => (zr[r] = i));
-  const done = new Set(), order = [];
-  while (order.length < R) {
-    let pick = -1;
-    for (const r of m.z) {
-      if (done.has(r)) continue;
-      let free = true;
-      for (let s = 0; s < R; s++) if (!done.has(s) && s !== r && isUnder(m, s, r)) { free = false; break; }
-      if (free) { pick = r; break; }
-    }
-    if (pick < 0) pick = m.z.find((r) => !done.has(r));
-    done.add(pick); order.push(pick);
-  }
-  return order;
-}
-function allMoves(m) {
-  const d = m.def, occ = occupied(m), out = [];
-  for (let r = 0; r < m.R; r++) for (let e = 0; e < 2; e++) {
-    const other = d.P[m.ends[r][1 - e]];
-    for (let h = 0; h < d.cells; h++) {
-      if (occ.has(h) || dist(d.P[h], other) < 0.99) continue;
-      if (blockers(m, r, e, d.P[h]).length) continue;
-      out.push({ r, e, h });
-    }
-  }
-  return out;
-}
-// bester nächster Zug (für den Tipp): wenigste Kreuzungen, bei Gleichstand freie Kordeln bevorzugt
-function bestMove(m) {
-  let best = null, bc = Infinity;
-  for (const mv of allMoves(m)) {
-    const c = cloneModel(m); applyMove(c, mv.r, mv.e, mv.h);
-    let freeBonus = 0; for (let s = 0; s < m.R; s++) if (isUnder(m, mv.r, s)) freeBonus += 0.1;
-    const sc = crossCount(c) + freeBonus;
-    if (sc < bc) { bc = sc; best = { ...mv, after: crossCount(c) }; }
-  }
-  return best;
-}
-
-/* =====================================================================
    Kapitel – gedeckte Farben
    ===================================================================== */
 const CHAPTERS = [
@@ -457,75 +586,15 @@ const GOLD_HI = hex("#f6e4bb");
 const ASH = hex("#7d766d");
 
 /* =====================================================================
-   Level-Erzeugung: kreuzungsfreie Lösung, dann mit erlaubten Zügen verknotet
-   ===================================================================== */
-const defCache = new Map();
-function levelDef(level) {
-  if (defCache.has(level)) return defCache.get(level);
-  const L = level;
-  const [cols, rows] = L <= 6 ? [4, 5] : L <= 18 ? [4, 6] : L <= 36 ? [5, 6] : [5, 7];
-  const cells = cols * rows, emptyMin = Math.max(3, Math.ceil(cells * 0.22));
-  const r = Math.min(Math.floor((cells - emptyMin) / 2), 3 + Math.floor((L - 1) / 3));
-  const P = range(cells).map((h) => ({ x: h % cols, y: Math.floor(h / cols) }));
-  const rng = mulberry32(((level * 2654435761) ^ 0x3c6ef372) >>> 0);
-  const ri = (n) => Math.floor(rng() * n);
-  const maxLen = Math.min(3.7, 2.3 + L * 0.02);
-  const def = { cols, rows, cells, r, P };
-  // 1. Lösung
-  let sol = null;
-  for (let att = 0; att < 300 && !sol; att++) {
-    const ends = [], occ = new Set();
-    for (let tries = 0; tries < 3000 && ends.length < r; tries++) {
-      const a = ri(cells), b = ri(cells);
-      if (a === b || occ.has(a) || occ.has(b)) continue;
-      const d = dist(P[a], P[b]); if (d < 0.99 || d > maxLen) continue;
-      if (ends.some(([c, e]) => pairHit(P[a], P[b], P[c], P[e]))) continue;
-      ends.push([a, b]); occ.add(a); occ.add(b);
-    }
-    if (ends.length === r) sol = ends;
-  }
-  def.sol = sol;
-  // 2. Verknoten – nur erlaubte Züge, also rückwärts sicher lösbar
-  const m = makeModel(def, sol, null, shuffle(range(r), rng));
-  const S = 2 + Math.floor(r * 0.9) + Math.floor(L / 12);
-  const minC = Math.max(2, Math.round(r * 0.9));
-  let last = -1, moves = 0;
-  for (let k = 0; k < S * 4 && (moves < S || crossCount(m) < minC); k++) {
-    const opts = allMoves(m).filter((mv) => mv.r !== last);
-    if (!opts.length) break;
-    let best = null, bs = -Infinity;
-    for (let s = 0; s < 14; s++) {
-      const mv = opts[ri(opts.length)];
-      const c = cloneModel(m); applyMove(c, mv.r, mv.e, mv.h);
-      // viele Kreuzungen, und möglichst viele Kordeln, die unter anderen festhängen
-      let pinned = 0; for (let a = 0; a < r; a++) for (let b = 0; b < r; b++) if (isUnder(c, a, b)) { pinned++; break; }
-      // Kreuzungen nur bis zu einer Obergrenze belohnen – Schwierigkeit kommt vom Festhängen
-      const sc = Math.min(crossCount(c), Math.round(r * 2)) + pinned * 1.2 + rng() * 1.5;
-      if (sc > bs) { bs = sc; best = mv; }
-    }
-    applyMove(m, best.r, best.e, best.h); last = best.r; moves++;
-  }
-  def.start = snapshot(m);
-  def.moves = moves;
-  const base = 25 + 8 * moves + 3 * r, factor = Math.max(0.7, 1 - (L - 1) * 0.004);
-  def.time = Math.max(40, Math.round((base * factor) / 5) * 5);
-  const pal = chapterOf(level).cords;
-  def.colors = shuffle(range(r), rng).map((i) => pal[i % pal.length]);
-  defCache.set(level, def);
-  return def;
-}
-const starsFor = (left, total) => (left >= total * 0.5 ? 3 : left >= total * 0.25 ? 2 : 1);
-
-/* =====================================================================
    Speicher
    ===================================================================== */
-const STORE = "knoten:v5";
+const STORE = "knoten:v6";
 let save = { unlocked: 1, solved: {}, cur: null, sound: true, vib: true, tips: {} };
 try {
   const s = JSON.parse(localStorage.getItem(STORE) || "null");
   if (s) save = Object.assign(save, s);
   else {
-    const old = JSON.parse(localStorage.getItem("knoten:v4") || localStorage.getItem("knoten:v3") || "null");
+    const old = JSON.parse(localStorage.getItem("knoten:v5") || localStorage.getItem("knoten:v4") || "null");
     if (old) { save.sound = old.sound !== false; save.vib = old.vib !== false; }
   }
 } catch (e) {}
@@ -713,59 +782,90 @@ function resize() {
 }
 
 /* =====================================================================
+   Level (vorab mit der Seilphysik geknüpft und geprüft – siehe tools/)
+   ===================================================================== */
+const LEVELS = window.KNOTEN_LEVELS || [];
+const LEVEL_COUNT = LEVELS.length;
+const defCache = new Map();
+function levelDef(level) {
+  if (defCache.has(level)) return defCache.get(level);
+  const L = LEVELS[level - 1];
+  if (!L) return null;
+  const cells = L.c * L.h, r = L.k.split("|")[0].split(";").length;
+  const pal = chapterOf(level).cords, rng = mulberry32(level * 7919 + 3);
+  const def = {
+    cols: L.c, rows: L.h, cells, r, time: L.t, moves: L.m, k: L.k,
+    P: range(cells).map((h) => ({ x: h % L.c, y: Math.floor(h / L.c) })),
+    colors: cordColors(pal, r, rng),
+  };
+  defCache.set(level, def);
+  return def;
+}
+// Kapitelfarben zuerst, dann weitere gedeckte Töne, die sich deutlich davon abheben
+const EXTRA = ["#c7905b", "#7f8fb5", "#c4566a", "#8fb08f", "#d8c49c", "#9c86c4", "#5fa3a8", "#d9963f", "#b07aa4", "#a8794f", "#9cc0b0", "#c88f84"];
+function cordColors(pal, r, rng) {
+  const out = shuffle(pal.slice(), rng);
+  const far = (c) => out.every((o) => { const a = hex(c), b = hex(o); return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 60; });
+  for (const c of shuffle(EXTRA.slice(), rng)) if (out.length < r && far(c)) out.push(c);
+  for (const c of EXTRA) if (out.length < r) out.push(c);
+  return shuffle(out.slice(0, r), rng);
+}
+const starsFor = (left, total) => (left >= total * 0.5 ? 3 : left >= total * 0.25 ? 2 : 1);
+
+/* =====================================================================
    Spielzustand
    ===================================================================== */
 const state = {
-  level: 1, def: null, M: null, look: [],
+  level: 1, def: null, world: null, look: [], cross: [],
   phase: "play", moves: 0, timeLeft: 60, started: false, paused: false,
-  undo: [], flashes: [], particles: [], rings: [], hint: null, tangled: new Set(), blockedFx: [],
+  undo: [], flashes: [], particles: [], rings: [], hint: null,
+  tangled: new Set(), freeAt: new Map(), activeUntil: 0, zeroSince: 0,
   win: null, lost: null, outro: null, lastTick: 0, lowSec: -1, lastSave: 0,
 };
-let drag = null; // { pid, r, e, x, y, dx, dy, target, legal, block }
+let drag = null; // { pid, r, e, dx, dy, x, y, target, from, snap }
+const N = Rope.N;
 
-function afterChange(fx) {
-  const now2 = tangledSet(state.M);
-  if (fx) {
-    const t = now();
-    let freed = false;
-    for (const r of state.tangled) if (!now2.has(r)) { freed = true; pluck(r, 1); state.flashes.push({ r, t0: t }); }
-    if (freed) { bumpPill(); haptic(8); }
+function wakePhysics(ms) { state.activeUntil = Math.max(state.activeUntil, now() + (ms || 600)); wake(); }
+function ropeLen(r) { const x = state.world.ropes[r].x, i = (N - 1) * 3; return Math.hypot(x[i] - x[0], x[i + 1] - x[1]); }
+// Kordel anzupfen: Schwung quer zur Kordel – die Physik lässt sie schwingen
+function pluck(r, strength, silent) {
+  const R = state.world.ropes[r], x = R.x, p = R.p, i = (N - 1) * 3;
+  let nx = -(x[i + 1] - x[1]), ny = x[i] - x[0];
+  const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+  const amp = 0.035 * strength;
+  for (let k = 1; k < N - 1; k++) {
+    const s = Math.sin((Math.PI * k) / (N - 1)) * amp;
+    p[k * 3] -= nx * s; p[k * 3 + 1] -= ny * s; p[k * 3 + 2] -= s * 0.6;
   }
-  state.tangled = now2;
-  updateHud();
-}
-function ropeLen(r) { const [A, B] = segOf(state.M, r); return dist(A, B); }
-function pluck(r, strength, delay) {
-  const L = state.look[r];
-  L.pluck = { t0: now() + (delay || 0) * 1000, amp: RW * 0.9 * strength };
-  Sound.pluck(ropeLen(r), delay, 0.06 + 0.06 * strength);
-  wake();
+  state.look[r].glowT = now();
+  if (!silent) Sound.pluck(ropeLen(r), 0, 0.06 + 0.06 * strength);
+  wakePhysics(1500);
 }
 
 function loadLevel(level, opts = {}) {
+  if (level > LEVEL_COUNT) level = LEVEL_COUNT;
   state.level = level;
   const d = (state.def = levelDef(level));
   layoutBoard();
+  const ends = d.k.split("|")[0].split(";").map((s) => s.split(",").map(Number));
+  const w = (state.world = Rope.createWorld(d.cols, d.rows, ends));
   const cur = save.cur;
-  let snap = d.start;
-  if (!opts.fresh && cur && cur.level === level && cur.snap && cur.snap.ends.length === d.r) {
-    snap = cur.snap; state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started;
+  if (!opts.fresh && cur && cur.level === level && cur.k) {
+    try { Rope.unpack(w, cur.k); } catch (e) { Rope.unpack(w, d.k); }
+    state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started;
   } else {
+    Rope.unpack(w, d.k);
     state.moves = 0; state.timeLeft = d.time; state.started = false;
   }
-  state.M = makeModel(d, snap.ends, snap.under, snap.z);
   const t = now();
   state.look = d.colors.map((hx, i) => {
     const col = hex(hx), c = lum(col) < 110 ? mix(col, [255, 248, 236], 0.25) : col;
-    return {
-      col: c, dark: mix(c, [10, 8, 6], 0.55), light: mix(c, [255, 252, 245], 0.45),
-      tw: [null, null], intro: t + 120 + i * Math.min(60, 700 / d.r), pluck: null, alpha: 0,
-      sp: { ox: 0, oy: 0, vx: 0, vy: 0, mx: NaN, my: NaN },
-    };
+    return { col: c, dark: mix(c, [10, 8, 6], 0.55), light: mix(c, [255, 252, 245], 0.45), intro: t + 120 + i * Math.min(60, 700 / d.r), alpha: 0, glowT: 0 };
   });
   state.phase = "play"; state.win = null; state.lost = null; state.undo = []; state.flashes = []; state.rings = [];
-  state.particles = []; state.hint = null; state.outro = null; drag = null; state.lowSec = -1; state.blockedFx = [];
-  state.tangled = tangledSet(state.M);
+  state.particles = []; state.hint = null; state.outro = null; drag = null; state.lowSec = -1;
+  state.cross = Rope.crossings(w); state.tangled = tangledOf(state.cross); state.freeAt = new Map(); state.zeroSince = 0;
+  wakePhysics(800);
   saveCur();
   resetCam(false);
   setChapterBg(level, opts.instantBg);
@@ -776,6 +876,7 @@ function loadLevel(level, opts = {}) {
   showTipFor(level);
   wake();
 }
+function tangledOf(cross) { const s = new Set(); for (const c of cross) { s.add(c.a); s.add(c.b); } return s; }
 
 let bgFront = "A";
 function bgCss(ch) { return `radial-gradient(ellipse 120% 90% at 50% 38%, ${ch.bg[0]} 0%, ${ch.bg[1]} 78%)`; }
@@ -789,21 +890,17 @@ function setChapterBg(level, instant) {
 }
 
 /* ---------- Anzeige ---------- */
-let pillTimer = 0, pillMsg = null;
+let pillTimer = 0, pillMsg = null, lastCount = -1;
 function updateHud() {
-  const c = crossCount(state.M), pill = $("#pill");
+  const c = state.cross.length, pill = $("#pill");
   $("#bHint").disabled = state.phase !== "play";
   if (state.phase !== "play") { pill.classList.add("hide"); return; }
   pill.classList.remove("hide");
   if (pillMsg) { pill.textContent = pillMsg; pill.className = "info"; return; }
-  if (drag && drag.preview != null) {
-    const p = drag.preview;
-    pill.className = p === 0 ? "zero" : "";
-    pill.textContent = p === 0 ? "Frei – jetzt loslassen" : `${c} → ${p} Kreuzungen`;
-    return;
-  }
+  if (c === lastCount && pill.dataset.drag === String(!!drag)) return;
+  lastCount = c; pill.dataset.drag = String(!!drag);
   pill.className = c === 0 ? "zero" : "";
-  pill.textContent = c === 0 ? "Frei" : c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
+  pill.textContent = c === 0 ? (drag ? "Frei – jetzt loslassen" : "Frei") : c === 1 ? "1 Kreuzung" : c + " Kreuzungen";
 }
 function updateTimer() {
   const d = state.def, f = clamp(state.timeLeft / d.time, 0, 1);
@@ -812,11 +909,13 @@ function updateTimer() {
   $("#tBar").classList.toggle("low", low);
   const marks = $("#tBar").querySelectorAll("b");
   marks[0].classList.toggle("off", f < 0.25); marks[1].classList.toggle("off", f < 0.5);
-  const tt = $("#tTxt"); tt.textContent = fmtTime(state.timeLeft); tt.classList.toggle("low", low);
+  const tt = $("#tTxt"), txt = fmtTime(state.timeLeft);
+  if (tt.textContent !== txt) tt.textContent = txt;
+  tt.classList.toggle("low", low);
 }
 function flashPill(msg, ms) {
-  pillMsg = msg; updateHud();
-  clearTimeout(flashPill.t); flashPill.t = setTimeout(() => { pillMsg = null; updateHud(); }, ms || 1800);
+  pillMsg = msg; lastCount = -1; updateHud();
+  clearTimeout(flashPill.t); flashPill.t = setTimeout(() => { pillMsg = null; lastCount = -1; updateHud(); }, ms || 1800);
 }
 function bumpPill() {
   const p = $("#pill"); p.classList.add("bump"); clearTimeout(pillTimer);
@@ -825,10 +924,10 @@ function bumpPill() {
 function updateUndo() { $("#bUndo").disabled = !state.undo.length || state.phase !== "play"; }
 
 const TIPS = {
-  1: "Ziehe ein Kordelende in eine freie Öse, bis sich keine Kordeln mehr kreuzen.",
-  2: "Liegt eine Kordel unter einer anderen, hängt sie fest. Bewege zuerst die obere.",
+  1: "Ziehe ein Kordelende in eine freie Öse. Die Kordeln sind wirklich verknotet – sie verfangen sich ineinander.",
+  2: "Schau, wie die Kordeln umeinander laufen, und führe ein Ende den Weg zurück, den es gekommen ist.",
   4: "Die Uhr läuft ab dem ersten Griff. Die Rauten zeigen, wie viele Sterne noch drin sind.",
-  7: "Die Glühbirne zeigt einen guten Zug – sie kostet aber zehn Sekunden.",
+  7: "Die Glühbirne zeigt eine Kordel, die obenauf liegt – sie kostet aber zehn Sekunden.",
 };
 let tipTimer = 0;
 function showTipFor(level) {
@@ -844,33 +943,39 @@ function tipDone() {
   clearTimeout(tipTimer); tipTimer = setTimeout(() => $("#tip").classList.remove("show"), 1800);
 }
 function saveCur() {
-  if (state.phase !== "play") return;
-  save.cur = { level: state.level, snap: snapshot(state.M), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started };
+  if (state.phase !== "play" || !state.world) return;
+  save.cur = { level: state.level, k: Rope.pack(state.world), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started };
   persist(true);
 }
 
 /* =====================================================================
-   Eingabe – Kordelende greifen und in eine freie Öse ziehen
+   Eingabe – Kordelende greifen, angehoben in eine freie Öse ziehen
    ===================================================================== */
 const HIT = () => Math.max(26, SP * 0.42);
+function endGrid(r, e) { const x = state.world.ropes[r].x, j = (e ? N - 1 : 0) * 3; return { x: x[j], y: x[j + 1], z: x[j + 2] }; }
+function ropeOrder() {
+  const w = state.world;
+  const z = w.ropes.map((R) => { let s = 0; for (let i = 0; i < N; i++) s += R.x[i * 3 + 2]; return s / N; });
+  return range(w.ropes.length).sort((a, b) => z[a] - z[b]);
+}
 function hitEnd(x, y) {
   let best = null, bd = HIT() ** 2;
-  const order = drawOrder(state.M);
+  const order = ropeOrder();
   for (let k = order.length - 1; k >= 0; k--) {
     const r = order[k];
     for (let e = 0; e < 2; e++) {
-      const s = g2s(state.def.P[state.M.ends[r][e]]), d = (s.x - x) ** 2 + (s.y - y) ** 2;
+      const s = g2s(endGrid(r, e)), d = (s.x - x) ** 2 + (s.y - y) ** 2;
       if (d < bd - 1) { bd = d; best = { r, e, s }; }
     }
   }
   return best;
 }
-function nearestHole(x, y, own) {
-  const w = toWorld(x, y), occ = occupied(state.M);
-  let best = -1, bd = (SP * 0.5) ** 2;
+function freeHoleNear(gx, gy, own) {
+  const occ = new Set(); state.world.ropes.forEach((R) => { occ.add(R.e[0]); occ.add(R.e[1]); });
+  let best = -1, bd = 0.45 * 0.45;
   for (let h = 0; h < state.def.cells; h++) {
     if (occ.has(h) && h !== own) continue;
-    const p = g2w(state.def.P[h].x, state.def.P[h].y), d = (p.x - w.x) ** 2 + (p.y - w.y) ** 2;
+    const p = state.def.P[h], d = (p.x - gx) ** 2 + (p.y - gy) ** 2;
     if (d < bd) { bd = d; best = h; }
   }
   return best;
@@ -886,50 +991,39 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!hit) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
   for (const L of state.look) L.intro = 0;
-  drag = { pid: e.pointerId, r: hit.r, e: hit.e, x, y, dx: hit.s.x - x, dy: hit.s.y - y, from: state.M.ends[hit.r][hit.e], target: -1, legal: false, block: [], preview: null, snagged: false };
-  state.look[hit.r].tw[hit.e] = null;
+  const R = state.world.ropes[hit.r];
+  drag = { pid: e.pointerId, r: hit.r, e: hit.e, x, y, dx: hit.s.x - x, dy: hit.s.y - y, target: -1, from: R.e[hit.e], snap: Rope.snapshot(state.world) };
+  const g = fingerGrid();
+  state.world.drag = { r: hit.r, e: hit.e, x: g.x, y: g.y };
   state.hint = null;
   startClock();
   Sound.pick(); haptic(6);
-  updateHud(); wake();
+  wakePhysics(); updateHud();
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!drag || drag.pid !== e.pointerId) return;
   drag.x = e.clientX; drag.y = e.clientY;
-  const M = state.M, g = fingerGrid();
-  const prevT = drag.target, wasSnag = drag.snagged;
-  drag.block = blockers(M, drag.r, drag.e, g);
-  drag.snagged = drag.block.length > 0;
-  drag.target = nearestHole(drag.x + drag.dx, drag.y + drag.dy, drag.from);
-  drag.legal = drag.target >= 0 && drag.target !== drag.from && legal(M, drag.r, drag.e, drag.target);
-  if (drag.legal) { const c = cloneModel(M); applyMove(c, drag.r, drag.e, drag.target); drag.preview = crossCount(c); }
-  else drag.preview = null;
-  if (drag.snagged && !wasSnag) { Sound.snag(); haptic(12); }
-  if (drag.target !== prevT && drag.legal) haptic(3);
-  updateHud();
-  wake();
+  const g = fingerGrid(), prev = drag.target;
+  state.world.drag.x = clamp(g.x, -0.8, state.def.cols - 0.2); state.world.drag.y = clamp(g.y, -0.8, state.def.rows - 0.2);
+  drag.target = freeHoleNear(g.x, g.y, drag.from);
+  if (drag.target !== prev && drag.target >= 0 && drag.target !== drag.from) haptic(3);
+  wakePhysics();
 });
 function endPointer(e) {
   if (!drag || drag.pid !== e.pointerId) return;
-  const d = drag, M = state.M, L = state.look[d.r];
-  const fg = fingerGrid();
-  drag = null;
-  const ok = e.type !== "pointercancel" && d.legal;
-  L.tw[d.e] = { fx: fg.x, fy: fg.y, t0: now(), dur: ok ? 160 : 380, ease: ok ? eOut : eBack };
-  if (ok) {
-    state.undo.push(snapshot(M)); if (state.undo.length > 100) state.undo.shift();
-    applyMove(M, d.r, d.e, d.target);
+  const d = drag, R = state.world.ropes[d.r];
+  drag = null; state.world.drag = null;
+  const moved = e.type !== "pointercancel" && d.target >= 0 && d.target !== d.from;
+  if (moved) {
+    R.e[d.e] = d.target;
+    state.undo.push(d.snap); if (state.undo.length > 60) state.undo.shift();
     state.moves++;
     Sound.seat(); haptic(10);
     tipDone();
-  } else {
-    if (d.snagged) { for (const s of d.block) state.blockedFx.push({ s, t0: now() }); flashPill("Liegt unter einer anderen Kordel", 1600); }
-    Sound.back();
-  }
-  afterChange(true);
-  updateUndo(); saveCur();
-  if (crossCount(M) === 0) setTimeout(() => solve(d.r), 160);
-  wake();
+  } else Sound.back();
+  state.zeroSince = 0;
+  wakePhysics(1200); updateUndo(); updateHud();
+  setTimeout(saveCur, 900);
 }
 canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
@@ -938,27 +1032,27 @@ document.addEventListener("dblclick", (e) => e.preventDefault());
 
 function undo() {
   if (!canAct() || drag || !state.undo.length) return;
-  const s = state.undo.pop(), old = state.M;
-  state.M = makeModel(state.def, s.ends, s.under, s.z);
-  // geänderte Enden gleiten zurück
-  old.ends.forEach((e2, r) => e2.forEach((h, e) => {
-    if (h !== state.M.ends[r][e]) { const p = state.def.P[h]; state.look[r].tw[e] = { fx: p.x, fy: p.y, t0: now(), dur: 300, ease: eOut }; }
-  }));
-  afterChange(true); updateUndo(); saveCur();
+  Rope.restore(state.world, state.undo.pop());
+  state.cross = Rope.crossings(state.world); state.tangled = tangledOf(state.cross); state.freeAt.clear();
+  wakePhysics(800); updateUndo(); updateHud(); saveCur();
   Sound.tone(392, { dur: 0.5, vol: 0.05, bright: 1500 }); haptic(5);
-  wake();
 }
+// Tipp: die Kordel, die am meisten obenauf liegt
 function hint() {
-  if (!canAct() || drag) return;
+  if (!canAct() || drag || !state.cross.length) return;
   Sound.init();
-  if (!crossCount(state.M)) return;
-  const best = bestMove(state.M);
-  if (!best) return;
-  state.hint = { ...best, t0: now() };
+  const score = new Array(state.def.r).fill(0), has = new Array(state.def.r).fill(0);
+  for (const c of state.cross) {
+    const bottom = c.top === c.a ? c.b : c.a;
+    score[c.top] += 1; score[bottom] -= 1.2; has[c.a] = has[c.b] = 1;
+  }
+  let best = -1; score.forEach((s, r) => { if (has[r] && (best < 0 || s > score[best])) best = r; });
+  if (best < 0) return;
+  state.hint = { r: best, t0: now() };
   startClock();
   state.timeLeft = Math.max(1, state.timeLeft - 10);
   updateTimer(); saveCur();
-  flashPill("Tipp · zehn Sekunden");
+  flashPill("Tipp · diese Kordel liegt obenauf");
   Sound.tone(659.25, { dur: 1.2, vol: 0.06, bright: 2600, bell: true });
   const b = $("#bHint"); b.classList.remove("hint-on"); void b.offsetWidth; b.classList.add("hint-on");
   wake();
@@ -969,21 +1063,21 @@ function restart() { if (state.outro) return; closeMenu(); nextLevel(state.level
    Gelöst!  /  Zeit abgelaufen
    ===================================================================== */
 const TITLES = ["Entwirrt", "Gelöst", "Wie gestimmt", "Fein gelöst", "Gelungen", "Wunderbar", "Frei"];
-function solve(lastRope) {
-  if (state.phase !== "play" || crossCount(state.M) !== 0 || drag) return;
+function solve() {
+  if (state.phase !== "play" || state.cross.length || drag) return;
   state.phase = "won";
-  const d = state.def, M = state.M;
-  const midX = (r) => { const [A, B] = segOf(M, r); return g2w(A.x, A.y).x + g2w(B.x, B.y).x; };
+  const d = state.def, w = state.world;
+  const midX = (r) => { const x = w.ropes[r].x; return x[0] + x[(N - 1) * 3]; };
   const order = range(d.r).sort((a, b) => midX(a) - midX(b));
   const STEP = clamp(1400 / d.r, 90, 160);
   const delay = new Array(d.r).fill(0);
   order.forEach((r, k) => (delay[r] = 250 + k * STEP));
-  state.win = { t0: now(), delay, STEP, done: new Uint8Array(d.r), lastRope, ringDone: false };
+  state.win = { t0: now(), delay, STEP, done: new Uint8Array(d.r), ringDone: false };
   const used = d.time - state.timeLeft, stars = starsFor(state.timeLeft, d.time);
   const prev = save.solved[state.level];
   const better = !prev || stars > prev.st || (stars === prev.st && used < prev.t);
-  save.solved[state.level] = better ? { ends: M.ends.map((e) => e.slice()), st: stars, t: Math.round(used), m: state.moves } : prev;
-  save.unlocked = Math.max(save.unlocked, state.level + 1);
+  save.solved[state.level] = better ? { ends: w.ropes.map((R) => R.e.slice()), st: stars, t: Math.round(used), m: state.moves } : prev;
+  save.unlocked = Math.min(LEVEL_COUNT, Math.max(save.unlocked, state.level + 1));
   save.cur = null;
   persist();
   Sound.win();
@@ -999,9 +1093,10 @@ function solve(lastRope) {
   $("#cRopes").textContent = d.r;
   let note = stars === 3 ? "" : stars === 2 ? "Drei Sterne gibt es, wenn noch die halbe Zeit übrig ist." : "Mehr Sterne gibt es fürs schnellere Lösen.";
   if (prev && better && prev.st) note = "Neue Bestzeit.";
-  if (state.level % 10 === 0) note = `Kapitel ${chapterName(state.level)} vollendet – als Nächstes: ${chapterName(state.level + 1)}.`;
+  if (state.level % 10 === 0) note = `Kapitel ${chapterName(state.level)} vollendet` + (state.level < LEVEL_COUNT ? ` – als Nächstes: ${chapterName(state.level + 1)}.` : ".");
+  if (state.level === LEVEL_COUNT) note = `Alle ${LEVEL_COUNT} Knoten gelöst. Wunderbar.`;
   $("#cNote").textContent = note;
-  $("#cAlt").textContent = "Nochmal"; $("#cMain").textContent = "Weiter";
+  $("#cAlt").textContent = "Nochmal"; $("#cMain").textContent = state.level < LEVEL_COUNT ? "Weiter" : "Galerie";
   const starEls = [...$("#cStars").children];
   starEls.forEach((s) => s.classList.remove("in", "on"));
   const showAt = 250 + d.r * STEP + 600;
@@ -1014,11 +1109,11 @@ function solve(lastRope) {
       if (k < stars) { s.classList.add("on"); Sound.star(k); haptic(6); }
     }, 450 + k * 260));
   }, showAt);
-  wake();
+  wakePhysics(showAt + 2000);
 }
 function lose() {
   if (state.phase !== "play") return;
-  drag = null;
+  if (drag) { drag = null; state.world.drag = null; }
   state.phase = "lost";
   state.lost = { t0: now() };
   state.timeLeft = 0;
@@ -1033,11 +1128,11 @@ function lose() {
   $("#cTime").textContent = fmtTime(state.def.time);
   $("#cMoves").textContent = state.moves;
   $("#cRopes").textContent = state.def.r;
-  const c = crossCount(state.M);
-  $("#cNote").textContent = `${c === 1 ? "Eine Kreuzung blieb" : c + " Kreuzungen blieben"}. Beim nächsten Versuch liegen die Kordeln wieder genauso.`;
+  const c = state.cross.length;
+  $("#cNote").textContent = `${c === 1 ? "Eine Kreuzung blieb" : c + " Kreuzungen blieben"}. Beim nächsten Versuch liegt der Knoten wieder genauso.`;
   $("#cAlt").textContent = "Level"; $("#cMain").textContent = "Nochmal";
   setTimeout(() => { if (state.phase === "lost") { card.classList.add("show"); frameBoard(true); } }, 900);
-  wake();
+  wakePhysics(1500);
 }
 function frameBoard(anim) {
   if (!state.def) return;
@@ -1054,6 +1149,7 @@ function frameBoard(anim) {
 }
 function nextLevel(level) {
   if (state.outro) return;
+  if (level > LEVEL_COUNT) { openMenu(); return; }
   $("#card").classList.remove("show");
   state.outro = { t0: now(), dur: 480, then: () => loadLevel(level, { fresh: true }) };
   Sound.tone(440, { dur: 0.8, vol: 0.04, bright: 1800 });
@@ -1063,7 +1159,7 @@ function nextLevel(level) {
 /* =====================================================================
    Animation & Zeichnen
    ===================================================================== */
-let raf = 0, lastFrame = 0;
+let raf = 0, lastFrame = 0, frameNo = 0;
 function wake() { if (!raf) { lastFrame = now(); raf = requestAnimationFrame(frame); } }
 function frame() {
   raf = 0;
@@ -1073,77 +1169,16 @@ function frame() {
   if (busy) raf = requestAnimationFrame(frame);
 }
 
-// Endpunkte einer Kordel in Rasterkoordinaten (mit Finger und Einrast-Animation)
-function ropeEnds(r, t) {
-  const M = state.M, P = state.def.P, L = state.look[r];
-  return [0, 1].map((e) => {
-    if (drag && drag.r === r && drag.e === e) return fingerGrid();
-    const g = P[M.ends[r][e]], tw = L.tw[e];
-    if (!tw) return g;
-    const k = clamp((t - tw.t0) / tw.dur, 0, 1), ee = tw.ease(k);
-    return { x: lerp(tw.fx, g.x, ee), y: lerp(tw.fy, g.y, ee) };
-  });
-}
-// Verlauf auf dem Bildschirm; eine festhängende Kordel hakt sich um die Öse der Deckkordel
-function screenPath(r, t) {
-  const [A, B] = ropeEnds(r, t);
-  const pts = [g2s(A)];
-  if (drag && drag.r === r && drag.block.length) {
-    const fixed = drag.e === 0 ? B : A, finger = drag.e === 0 ? A : B;
-    const hooks = drag.block.map((s) => {
-      const [C, D] = segOf(state.M, s);
-      return dist(fixed, C) + dist(C, finger) < dist(fixed, D) + dist(D, finger) ? C : D;
-    }).sort((p, q) => dist(fixed, p) - dist(fixed, q));
-    const chain = [fixed, ...hooks, finger];
-    if (drag.e === 0) chain.reverse();
-    const sp = chain.map(g2s);
-    // Ecke etwas neben den Stift legen, damit die Kordel sichtbar herumläuft
-    for (let i = 1; i < sp.length - 1; i++) {
-      const p = sp[i], a = sp[i - 1], b = sp[i + 1];
-      const u = toward(p, a, 1), v = toward(p, b, 1);
-      let ix = u.x - p.x + v.x - p.x, iy = u.y - p.y + v.y - p.y, il = Math.hypot(ix, iy);
-      if (il < 1e-3) { ix = -(b.y - a.y); iy = b.x - a.x; il = Math.hypot(ix, iy) || 1; }
-      const off = (PEG + RW * 0.7) * cam.s;
-      sp[i] = { x: p.x - (ix / il) * off, y: p.y - (iy / il) * off };
-    }
-    return sp;
-  }
-  pts.push(g2s(B));
-  return pts;
-}
-function tracePath(pts, r, t) {
-  const L = state.look[r];
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, pts[0].y);
-  if (pts.length === 2) {
-    let cx = (pts[0].x + pts[1].x) / 2 + L.sp.ox * 2 * cam.s, cy = (pts[0].y + pts[1].y) / 2 + L.sp.oy * 2 * cam.s;
-    if (L.pluck) {
-      const el = (t - L.pluck.t0) / 1000;
-      if (el > 0) {
-        const A = pts[0], B = pts[1], len = Math.hypot(B.x - A.x, B.y - A.y) || 1;
-        const a = L.pluck.amp * 2 * Math.exp(-el * 2.6) * Math.sin(el * TAU * 9);
-        cx += (-(B.y - A.y) / len) * a; cy += ((B.x - A.x) / len) * a;
-      }
-    }
-    ctx.quadraticCurveTo(cx, cy, pts[1].x, pts[1].y);
-    return;
-  }
-  const rad = RW * 1.6 * cam.s;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const rr = Math.min(rad, dist(pts[i], pts[i - 1]) / 2, dist(pts[i], pts[i + 1]) / 2);
-    ctx.arcTo(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, Math.max(0.1, rr));
-  }
-  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-}
-
 function update(t, dt) {
   let busy = !!drag;
+  frameNo++;
+  // Uhr
   if (state.phase === "play" && state.started && !state.paused && !document.hidden && !state.outro) {
     state.timeLeft -= Math.min(0.25, (t - (state.lastTick || t)) / 1000);
     const sec = Math.ceil(state.timeLeft);
     if (sec <= 10 && sec !== state.lowSec && sec > 0) { state.lowSec = sec; Sound.tick(); }
     updateTimer();
-    if (t - state.lastSave > 2000) { state.lastSave = t; saveCur(); }
+    if (t - state.lastSave > 3000 && !drag) { state.lastSave = t; saveCur(); }
     if (state.timeLeft <= 0) lose();
     busy = true;
   }
@@ -1153,29 +1188,44 @@ function update(t, dt) {
     cam.s = lerp(cam.tw.f.s, cam.tw.t.s, e); cam.ox = lerp(cam.tw.f.ox, cam.tw.t.ox, e); cam.oy = lerp(cam.tw.f.oy, cam.tw.t.oy, e);
     if (k >= 1) cam.tw = null; busy = true;
   }
-  state.look.forEach((L, r) => {
+  // Physik, solange sich etwas bewegt
+  if (state.world && (drag || t < state.activeUntil)) {
+    Rope.step(state.world, dt || 1 / 60);
+    if (Rope.motion(state.world) > 4e-4) state.activeUntil = Math.max(state.activeUntil, t + 250);
+    if (frameNo % 2 === 0 || !drag) {
+      state.cross = Rope.crossings(state.world);
+      const tg = tangledOf(state.cross);
+      if (state.phase === "play") {
+        for (const r of state.tangled) if (!tg.has(r) && !state.freeAt.has(r)) state.freeAt.set(r, t);
+        for (const r of tg) state.freeAt.delete(r);
+        for (const [r, t0] of state.freeAt) if (t - t0 > 220 && !(drag && drag.r === r)) {   // wirklich frei geworden
+          state.freeAt.delete(r); state.tangled.delete(r);
+          pluck(r, 1); state.flashes.push({ r, t0: t }); bumpPill(); haptic(8);
+        }
+        for (const r of tg) state.tangled.add(r);
+      }
+      updateHud();
+    }
+    busy = true;
+  }
+  // gelöst? – erst wenn nichts mehr kreuzt und die Kordeln zur Ruhe kommen
+  if (state.phase === "play" && !drag && state.world) {
+    if (state.cross.length === 0) {
+      if (!state.zeroSince) state.zeroSince = t;
+      if (t - state.zeroSince > 450) solve();
+      busy = true;
+    } else state.zeroSince = 0;
+  }
+  for (const L of state.look) {
     L.alpha = L.intro ? clamp((t - L.intro) / 450, 0, 1) : 1;
     if (L.alpha < 1) busy = true;
-    for (let e = 0; e < 2; e++) if (L.tw[e]) { if (t - L.tw[e].t0 > L.tw[e].dur) L.tw[e] = null; else busy = true; }
-    if (L.pluck) { if (t - L.pluck.t0 > 1800) L.pluck = null; else busy = true; }
-    // leichtes Nachschwingen beim Bewegen
-    const [A, B] = ropeEnds(r, t).map((g) => g2w(g.x, g.y)), sp = L.sp;
-    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-    if (!isNaN(sp.mx)) { sp.ox -= (mx - sp.mx) * 0.5; sp.oy -= (my - sp.my) * 0.5; }
-    sp.mx = mx; sp.my = my;
-    const len = Math.hypot(A.x - B.x, A.y - B.y), cap = len * 0.16, ol = Math.hypot(sp.ox, sp.oy);
-    if (ol > cap && ol > 0) { sp.ox *= cap / ol; sp.oy *= cap / ol; }
-    sp.vx += (-sp.ox * 200 - sp.vx * 12) * dt; sp.vy += (-sp.oy * 200 - sp.vy * 12) * dt;
-    sp.ox += sp.vx * dt; sp.oy += sp.vy * dt;
-    if (Math.abs(sp.ox) + Math.abs(sp.oy) + Math.abs(sp.vx) * 0.02 + Math.abs(sp.vy) * 0.02 > 0.04) busy = true;
-  });
+  }
   state.flashes = state.flashes.filter((f) => t - f.t0 < 800);
-  state.blockedFx = state.blockedFx.filter((f) => t - f.t0 < 1400);
   state.rings = state.rings.filter((r) => t - r.t0 < r.dur);
   for (const p of state.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 6 * dt; p.vx *= 1 - dt * 0.6; }
   state.particles = state.particles.filter((p) => t - p.t0 < p.life);
-  if (state.flashes.length || state.rings.length || state.particles.length || state.blockedFx.length) busy = true;
-  if (crossCount(state.M) && state.phase === "play") busy = true;
+  if (state.flashes.length || state.rings.length || state.particles.length) busy = true;
+  if (state.cross.length && state.phase === "play") busy = true;
   if (state.hint && t - state.hint.t0 > 3200) state.hint = null;
   if (state.hint) busy = true;
   if (state.lost && t - state.lost.t0 < 1500) busy = true;
@@ -1183,15 +1233,15 @@ function update(t, dt) {
     const w = state.win, el = t - w.t0;
     if (!w.ringDone) {
       w.ringDone = true;
-      const [A, B] = segOf(state.M, w.lastRope).map(g2s);
-      state.rings.push({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2, t0: t, dur: 1700, r: Math.max(W, H) * 0.75 });
+      const c = g2s({ x: (state.def.cols - 1) / 2, y: (state.def.rows - 1) / 2 });
+      state.rings.push({ x: c.x, y: c.y, t0: t, dur: 1700, r: Math.max(W, H) * 0.75 });
     }
     for (let r = 0; r < state.def.r; r++) {
       if (w.done[r] || el < w.delay[r]) continue;
       w.done[r] = 1;
-      pluck(r, 1.25);
-      for (const g of segOf(state.M, r)) {
-        const s = g2s(g);
+      pluck(r, 1.4);
+      for (let e = 0; e < 2; e++) {
+        const s = g2s(endGrid(r, e));
         for (let k = 0; k < 3; k++) {
           const a = Math.random() * TAU, v = 12 + Math.random() * 36;
           state.particles.push({ x: s.x, y: s.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 24, t0: t, life: 1300 + Math.random() * 1400, size: 5 + Math.random() * 9 });
@@ -1208,6 +1258,22 @@ function update(t, dt) {
   return busy;
 }
 
+/* ---------- Kordeln zeichnen ---------- */
+function ropePts(r) {
+  const x = state.world.ropes[r].x, pts = new Array(N);
+  for (let i = 0; i < N; i++) { const s = g2s({ x: x[i * 3], y: x[i * 3 + 1] }); s.z = x[i * 3 + 2]; pts[i] = s; }
+  return pts;
+}
+function tracePts(pts, ox, oy, zk) {
+  const X = (p) => p.x + (ox || 0) + (zk ? p.z * zk : 0), Y = (p) => p.y + (oy || 0) + (zk ? p.z * zk * 1.6 : 0);
+  ctx.beginPath();
+  ctx.moveTo(X(pts[0]), Y(pts[0]));
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    ctx.quadraticCurveTo(X(a), Y(a), (X(a) + X(b)) / 2, (Y(a) + Y(b)) / 2);
+  }
+  ctx.lineTo(X(pts[pts.length - 1]), Y(pts[pts.length - 1]));
+}
 function glowAt(spr, x, y, size, alpha) { ctx.globalAlpha = alpha; ctx.drawImage(spr, x - size / 2, y - size / 2, size, size); }
 function drawPeg(x, y, L, s, a, goldK) {
   const r = PEG * s;
@@ -1222,52 +1288,47 @@ function drawPeg(x, y, L, s, a, goldK) {
   ctx.beginPath(); ctx.arc(x, y, r * 0.92, 0, TAU); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.38, r * 0.3, r * 0.17, -0.6, 0, TAU); ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.fill();
 }
-function drawRope(r, t, base, lostK, w, shadow) {
-  const L = state.look[r], pts = screenPath(r, t), s = cam.s;
+function drawRope(r, pts, t, base, lostK, w, shadow) {
+  const L = state.look[r], s = cam.s;
   const a = base * L.alpha * (1 - lostK * 0.4);
   if (a <= 0) return;
   const goldK = w && w.done[r] ? eOut(clamp((t - w.t0 - w.delay[r]) / 500, 0, 1)) : 0;
   const col = mix(mix(L.col, ASH, lostK * 0.55), GOLD_HI, goldK * 0.25);
   const rw = RW * s * (L.alpha < 1 ? 0.6 + 0.4 * L.alpha : 1);
-  const held = drag && drag.r === r;
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   if (shadow) {
-    ctx.save(); ctx.translate(1.2 * s, (held ? 6 : 3) * s);
-    ctx.globalAlpha = a * 0.45; tracePath(pts, r, t); ctx.lineWidth = rw + 2; ctx.strokeStyle = "#000"; ctx.stroke();
-    ctx.restore();
+    ctx.globalAlpha = a * 0.42; tracePts(pts, 1.2 * s, 2.5 * s, SP * s * 0.12);
+    ctx.lineWidth = rw + 2; ctx.strokeStyle = "#000"; ctx.stroke();
   }
-  ctx.globalAlpha = a; tracePath(pts, r, t);
+  ctx.globalAlpha = a; tracePts(pts);
   ctx.lineWidth = rw + 1.8; ctx.strokeStyle = rgba(L.dark, 1); ctx.stroke();
   ctx.lineWidth = rw; ctx.strokeStyle = rgba(col, 1); ctx.stroke();
   ctx.setLineDash([rw * 0.55, rw * 0.75]);
   ctx.globalAlpha = a * 0.22; ctx.lineWidth = rw * 0.62; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.save(); ctx.translate(-rw * 0.16, -rw * 0.2);
-  ctx.globalAlpha = a * 0.5; tracePath(pts, r, t); ctx.lineWidth = rw * 0.22; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
-  ctx.restore();
-  if (goldK > 0 && goldK < 1) {
-    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a * (1 - goldK) * 0.6;
-    tracePath(pts, r, t); ctx.lineWidth = rw + 6; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke(); ctx.restore();
+  ctx.globalAlpha = a * 0.5; tracePts(pts, -rw * 0.16, -rw * 0.2); ctx.lineWidth = rw * 0.22; ctx.strokeStyle = rgba(L.light, 1); ctx.stroke();
+  const gk = goldK > 0 && goldK < 1 ? 1 - goldK : 0, pk = L.glowT ? clamp(1 - (t - L.glowT) / 900, 0, 1) : 0;
+  if (gk || pk) {
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a * Math.max(gk * 0.6, pk * 0.35);
+    tracePts(pts); ctx.lineWidth = rw + 6; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke(); ctx.restore();
   }
   for (let e = 0; e < 2; e++) {
-    const p = e ? pts[pts.length - 1] : pts[0], lifted = held && drag.e === e;
-    if (lifted) glowAt(sprites.glow, p.x, p.y, PEG * 7 * s, a * 0.25);
-    drawPeg(p.x, p.y, L, s * (lifted ? 1.3 : 1) * (L.alpha < 1 ? eBack(L.alpha) : 1), a, goldK);
+    const p = e ? pts[N - 1] : pts[0], lift = 1 + p.z * 0.45;
+    if (drag && drag.r === r && drag.e === e) glowAt(sprites.glow, p.x, p.y, PEG * 7 * s, a * 0.25);
+    drawPeg(p.x, p.y, L, s * lift * (L.alpha < 1 ? eBack(L.alpha) : 1), a, goldK);
   }
 }
-// Leuchten einer Kordel (blockierende Deckkordel, Tipp)
-function glowRope(r, t, alpha, color) {
+function glowRope(pts, alpha) {
   if (alpha <= 0) return;
-  const pts = screenPath(r, t);
   ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = alpha;
-  tracePath(pts, r, t); ctx.lineCap = "round"; ctx.lineWidth = RW * cam.s + 7; ctx.strokeStyle = rgba(color, 1); ctx.stroke();
+  tracePts(pts); ctx.lineCap = "round"; ctx.lineWidth = RW * cam.s + 7; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke();
   ctx.restore();
 }
 
 function draw(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const d = state.def, M = state.M; if (!d || !M) return;
+  const d = state.def, world = state.world; if (!d || !world) return;
   ctx.save();
   if (state.outro) {
     const k = eIn(clamp((t - state.outro.t0) / state.outro.dur, 0, 1));
@@ -1299,13 +1360,8 @@ function draw(t) {
     ctx.globalAlpha = base;
     ctx.drawImage(sprites.hole.cv, p.x - hs / 2, p.y - hs / 2, hs, hs);
     if (drag && drag.target === h && h !== drag.from) {
-      if (drag.legal) {
-        glowAt(sprites.glow, p.x, p.y, HOLE * 6 * s, base * 0.45);
-        ctx.globalAlpha = base * 0.9; ctx.strokeStyle = rgba(GOLD_HI, 1);
-      } else {
-        ctx.globalAlpha = base * 0.7; ctx.strokeStyle = "#e08a6d";
-      }
-      ctx.lineWidth = 1.5;
+      glowAt(sprites.glow, p.x, p.y, HOLE * 6 * s, base * 0.45);
+      ctx.globalAlpha = base * 0.9; ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, HOLE * 1.35 * s, 0, TAU); ctx.stroke();
     }
     if (w) {
@@ -1313,67 +1369,60 @@ function draw(t) {
       if (k > 0 && k < 1) { ctx.save(); ctx.globalCompositeOperation = "lighter"; glowAt(sprites.glow, p.x, p.y, HOLE * 4 * s, base * Math.sin(Math.PI * k) * 0.6); ctx.restore(); }
     }
   }
-  /* --- Kordeln: von unten nach oben, dann Überkreuzungen nachzeichnen --- */
-  const order = drawOrder(M), idx = {};
+  /* --- Kordeln: nach Höhe, dann jede Überkreuzung richtig herum --- */
+  const order = ropeOrder(), idx = {}, P = [];
   order.forEach((r, i) => (idx[r] = i));
-  // die gezogene Kordel liegt beim Ziehen sichtbar obenauf – außer wo sie festhängt
-  const held = drag ? drag.r : -1;
-  const layers = held >= 0 ? order.filter((r) => r !== held).concat([held]) : order;
-  layers.forEach((r, i) => (idx[r] = i));
-  for (const r of layers) drawRope(r, t, base, lostK, w, true);
-  const cr = crossings(M), crossR = RW * 2.3 * s;
-  if (!drag) {
-    for (const c of cr) {
-      if (c.under < 0 || idx[c.under] < idx[c.over]) continue;
-      const X = g2s(c);
-      ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
-      drawRope(c.over, t, base, lostK, w, false);
-      ctx.restore();
-    }
-  } else {
-    // beim Ziehen: Deckkordeln über die gezogene Kordel legen, wo sie darunter klemmt
-    for (let o = 0; o < M.R; o++) {
-      if (!isUnder(M, held, o)) continue;
-      const pts = screenPath(held, t), C = segOf(M, o).map(g2s);
-      for (let i = 0; i < pts.length - 1; i++) {
-        if (!segCross(pts[i], pts[i + 1], C[0], C[1])) continue;
-        const X = intersect(pts[i], pts[i + 1], C[0], C[1]);
-        ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
-        drawRope(o, t, base, lostK, w, false);
-        ctx.restore();
-      }
-    }
+  for (let r = 0; r < d.r; r++) P[r] = ropePts(r);
+  for (const r of order) drawRope(r, P[r], t, base, lostK, w, true);
+  const crossR = RW * 2.2 * s;
+  for (const c of state.cross) {
+    const bottom = c.top === c.a ? c.b : c.a;
+    if (idx[c.top] > idx[bottom]) continue;
+    const X = g2s(c);
+    ctx.save(); ctx.beginPath(); ctx.arc(X.x, X.y, crossR, 0, TAU); ctx.clip();
+    drawRope(c.top, P[c.top], t, base, lostK, w, false);
+    ctx.restore();
   }
-  /* --- blockierende Deckkordeln aufleuchten lassen --- */
-  if (drag && drag.snagged) for (const o of drag.block) glowRope(o, t, base * (0.28 + 0.12 * Math.sin(t * 0.012)), GOLD_HI);
-  for (const f of state.blockedFx) { const k = (t - f.t0) / 1400; glowRope(f.s, t, base * 0.45 * Math.sin(Math.PI * Math.min(1, k * 3)) * (1 - k), GOLD_HI); }
   /* --- Kreuzungen markieren --- */
   if (!w && !drag) {
     const pulse = 0.8 + 0.2 * Math.sin(t * 0.005), fade = 1 - lostK * 0.5;
-    for (const c of cr) {
+    for (const c of state.cross) {
       const X = g2s(c);
-      glowAt(sprites.coral, X.x, X.y, RW * 3.2 * s, base * 0.45 * pulse * fade);
-      ctx.globalAlpha = base * 0.9 * fade;
-      ctx.beginPath(); ctx.arc(X.x, X.y, RW * 0.3 * s * (0.9 + 0.2 * pulse), 0, TAU);
+      glowAt(sprites.coral, X.x, X.y, RW * 2.2 * s, base * 0.35 * pulse * fade);
+      ctx.globalAlpha = base * 0.85 * fade;
+      ctx.beginPath(); ctx.arc(X.x, X.y, RW * 0.21 * s * (0.9 + 0.2 * pulse), 0, TAU);
       ctx.fillStyle = "#e8896a"; ctx.fill();
       ctx.lineWidth = 1; ctx.strokeStyle = "rgba(40,14,8,0.7)"; ctx.stroke();
+    }
+  }
+  /* --- Tipp --- */
+  if (state.hint) {
+    const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp((3200 - el2) / 400, 0, 1);
+    glowRope(P[hn.r], a * (0.3 + 0.15 * Math.sin(el2 * 0.01)));
+    ctx.strokeStyle = rgba(GOLD_HI, 1);
+    for (let e = 0; e < 2; e++) {
+      const from = e ? P[hn.r][N - 1] : P[hn.r][0];
+      for (let k = 0; k < 2; k++) {
+        const p = ((el2 + k * 600) % 1200) / 1200;
+        ctx.globalAlpha = a * (1 - p); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(from.x, from.y, PEG * s * (1.4 + p * 1.6), 0, TAU); ctx.stroke();
+      }
     }
   }
   /* --- Effekte --- */
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   for (const f of state.flashes) {
-    const k = clamp((t - f.t0) / 750, 0, 1), pts = screenPath(f.r, t);
-    ctx.globalAlpha = base * (1 - k) * 0.45; tracePath(pts, f.r, t); ctx.lineWidth = RW * s + 6 * (1 - k); ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke();
-    const A = pts[0], B = pts[pts.length - 1];
-    glowAt(sprites.glow, lerp(A.x, B.x, 0.5 - 0.5 * eOut(k)), lerp(A.y, B.y, 0.5 - 0.5 * eOut(k)), 30, base * (1 - k));
-    glowAt(sprites.glow, lerp(A.x, B.x, 0.5 + 0.5 * eOut(k)), lerp(A.y, B.y, 0.5 + 0.5 * eOut(k)), 30, base * (1 - k));
+    const k = clamp((t - f.t0) / 750, 0, 1), pts = P[f.r];
+    ctx.globalAlpha = base * (1 - k) * 0.45; tracePts(pts); ctx.lineWidth = RW * s + 6 * (1 - k); ctx.strokeStyle = rgba(GOLD_HI, 1); ctx.stroke();
+    const i1 = Math.round((N - 1) * (0.5 - 0.5 * eOut(k))), i2 = Math.round((N - 1) * (0.5 + 0.5 * eOut(k)));
+    glowAt(sprites.glow, pts[i1].x, pts[i1].y, 30, base * (1 - k)); glowAt(sprites.glow, pts[i2].x, pts[i2].y, 30, base * (1 - k));
   }
   if (w) {
     for (let r = 0; r < d.r; r++) {
       const k = (el - w.delay[r]) / 650;
       if (k <= 0 || k >= 1) continue;
-      const [A, B] = segOf(M, r).map(g2s), f = eOut(k);
-      glowAt(sprites.glow, lerp(A.x, B.x, f), lerp(A.y, B.y, f), 34, base * Math.sin(Math.PI * k));
+      const p = P[r][Math.round((N - 1) * eOut(k))];
+      glowAt(sprites.glow, p.x, p.y, 34, base * Math.sin(Math.PI * k));
     }
   }
   for (const r of state.rings) {
@@ -1386,23 +1435,6 @@ function draw(t) {
     glowAt(sprites.glow, p.x, p.y, p.size * (1 - k * 0.4), base * Math.sin(Math.PI * Math.min(1, k * 1.15)) * 0.9 * fl);
   }
   ctx.restore();
-  /* --- Tipp --- */
-  if (state.hint) {
-    const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp((3200 - el2) / 400, 0, 1);
-    const from = g2s(d.P[M.ends[hn.r][hn.e]]), to = g2s(d.P[hn.h]);
-    ctx.strokeStyle = rgba(GOLD_HI, 1);
-    for (let k = 0; k < 2; k++) {
-      const p = ((el2 + k * 600) % 1200) / 1200;
-      ctx.globalAlpha = a * (1 - p); ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(from.x, from.y, PEG * s * (1.4 + p * 1.6), 0, TAU); ctx.stroke();
-    }
-    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-    const cx = mx - (to.y - from.y) * 0.2, cy = my + (to.x - from.x) * 0.2;
-    ctx.globalAlpha = a * 0.8; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -el2 * 0.03;
-    ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo(cx, cy, to.x, to.y); ctx.lineWidth = 1.6; ctx.stroke();
-    ctx.setLineDash([]);
-    glowAt(sprites.glow, to.x, to.y, HOLE * 5 * s, a * 0.55);
-  }
   ctx.restore();
 }
 
@@ -1431,8 +1463,8 @@ function openMenu() {
   Sound.init();
   state.paused = true;
   const box = $("#chapters"); box.innerHTML = "";
-  const maxLvl = Math.max(save.unlocked, state.level);
-  const chapters = chapterIdx(maxLvl) + 1;
+  const maxLvl = Math.min(LEVEL_COUNT, Math.max(save.unlocked, state.level));
+  const chapters = Math.min(Math.ceil(LEVEL_COUNT / 10), chapterIdx(maxLvl) + 1);
   const pending = [];
   let total = 0; for (const k in save.solved) total += save.solved[k].st || 0;
   $("#mTotal").textContent = total ? `${total} ◆` : "";
@@ -1444,6 +1476,7 @@ function openMenu() {
     const grid = sec.querySelector(".grid");
     for (let k = 0; k < 10; k++) {
       const lvl = first + k, b = document.createElement("button");
+      if (lvl > LEVEL_COUNT) break;
       const sv = save.solved[lvl], open = lvl <= save.unlocked;
       b.className = "tile" + (sv ? " solved" : "") + (lvl === state.level ? " cur" : "") + (!open ? " locked" : "");
       b.innerHTML = `<span class="n">${lvl}</span>` + (sv ? `<span class="st">${[0, 1, 2].map((j) => `<i class="${j < sv.st ? "on" : ""}"></i>`).join("")}</span>` : "");
@@ -1492,12 +1525,13 @@ loadLevel(startLevel, { instantBg: true });
 
 // Für Tests
 window.__knoten = {
-  state, save, levelDef, bestMove, crossCount, cloneModel, applyMove, makeModel, legal, allMoves,
+  state, save, levelDef, Rope,
   level: (n) => loadLevel(n, { fresh: true }),
   holeScreen: (h) => g2s(state.def.P[h]),
-  endScreen: (r, e) => g2s(state.def.P[state.M.ends[r][e]]),
+  endScreen: (r, e) => g2s(endGrid(r, e)),
 };
 })();
+
 </script>
 </body>
 </html>

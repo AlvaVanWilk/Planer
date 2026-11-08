@@ -1,0 +1,81 @@
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Knoten">
+<meta name="theme-color" content="#141210">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<title>Knoten – Entwirre die Fäden</title>
+<style>
+/*CSS*/
+</style>
+<!--BODY-->
+<div class="bg" id="bgA"></div>
+<div class="bg" id="bgB" style="opacity:0"></div>
+<div id="grain"></div>
+<div id="vig"></div>
+<canvas id="c"></canvas>
+
+<header class="hud" id="hud">
+  <button class="ib" id="bMenu" aria-label="Level und Galerie">
+    <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/><path d="M7.2 7.2 16.8 16.8"/></svg>
+  </button>
+  <div class="ttl">
+    <div class="ch" id="tChap">Leinen</div>
+    <div class="lv" id="tLevel">Level 1</div>
+    <div class="timer">
+      <div class="tbar" id="tBar"><i id="tFill"></i><b style="left:25%"></b><b style="left:50%"></b></div>
+      <span id="tTxt">0:00</span>
+    </div>
+  </div>
+  <div class="rbtns">
+    <button class="ib" id="bUndo" aria-label="Rückgängig" disabled>
+      <svg viewBox="0 0 24 24"><path d="M9 7 5 11l4 4"/><path d="M5 11h9a5 5 0 0 1 0 10h-2"/></svg>
+    </button>
+    <button class="ib" id="bHint" aria-label="Tipp (kostet 10 Sekunden)">
+      <svg viewBox="0 0 24 24"><path d="M9.5 17.5h5M10 20.5h4"/><path d="M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5 1 1.2 1 2v.5h4.4v-.5c0-.8.4-1.5 1-2A5.5 5.5 0 0 0 12 3.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="pill">–</div>
+<div id="tip"></div>
+
+<div id="card">
+  <div class="cap" id="cCap">Level 1 · Leinen</div>
+  <h2 id="cTitle">Entwirrt</h2>
+  <div class="stars" id="cStars"><i></i><i></i><i></i></div>
+  <div class="stats">
+    <div><b id="cTime">0:00</b><span>Zeit</span></div>
+    <div><b id="cMoves">0</b><span>Züge</span></div>
+    <div><b id="cRopes">0</b><span>Kordeln</span></div>
+  </div>
+  <div class="note" id="cNote"></div>
+  <div class="row">
+    <button class="btn ghost" id="cAlt">Nochmal</button>
+    <button class="btn" id="cMain">Weiter</button>
+  </div>
+</div>
+
+<div id="menu">
+  <div class="mwrap">
+    <div class="mhead">
+      <div class="brand"><b>Knoten</b><span>Entwirre die Fäden</span></div>
+      <button class="ib" id="mClose" aria-label="Schließen">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="opts">
+      <button class="tg" id="oSound"><i></i>Klang</button>
+      <button class="tg" id="oVib"><i></i>Vibration</button>
+      <button class="tg" id="oRestart">Neu starten</button>
+      <span class="total" id="mTotal"></span>
+    </div>
+    <div id="chapters"></div>
+    <div class="foot">Ziehe die Enden der Kordeln in freie Ösen, bis sich keine mehr kreuzen.<br>Wer unten liegt, hängt fest – wer oben liegt, gleitet frei darüber.<br>Löse den Knoten von oben nach unten.</div>
+  </div>
+</div>
+
+<script>
+/*JS*/
+</script>

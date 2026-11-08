@@ -58,24 +58,25 @@ eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es 
 
 # Knoten – Entwirre die Fäden
 
-Im Ordner `knoten/` liegt ein Rätselspiel für iPad und Handy, ebenfalls eine
+Im Ordner `knoten/` liegt ein Knoten-Rätsel für iPad und Handy, ebenfalls eine
 einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es unter
 `https://BENUTZERNAME.github.io/REPONAME/knoten/`.
 
-- Seidenkordeln stecken mit beiden Enden in Messingösen. Zieht man ein Ende in eine freie Öse,
-  spannt sich die Kordel neu. Ziel: keine Kordel kreuzt mehr eine andere.
-- Jede Kreuzung hat ein Oben und Unten; die zuletzt bewegte Kordel liegt oben. Eine Kordel,
-  die unter einer anderen liegt, hängt fest: Sie lässt sich nur so umsetzen, dass sie die
-  Deckkordel weiter kreuzt – zieht man sie weg, hakt sie an deren Öse ein und die Deckkordel
-  leuchtet auf. Also: den Knoten von oben nach unten lösen.
+- Seidenkordeln stecken mit beiden Enden in Messingösen und sind wirklich miteinander
+  verknotet: Eine Seilphysik lässt sie umeinander laufen, sich verdrehen und verfangen.
+- Ein Ende greifen hebt es an; es lässt sich über alles hinweg in eine freie Öse ziehen,
+  die Kordel schleift hinterher. Ziel: Keine Kordel kreuzt mehr eine andere.
 - Die Uhr läuft ab dem ersten Griff. Ist noch die halbe Zeit übrig, gibt es drei Sterne,
   bei einem Viertel zwei, sonst einen. Läuft sie ab, beginnt das Level von vorn.
-- Wird eine Kordel frei, klingt sie wie eine gezupfte Saite – lange tief, kurze hoch. Beim
-  Lösen wird die ganze Harfe von links nach rechts gespielt.
-- Rückgängig ist frei; die Glühbirne zeigt einen guten Zug und kostet zehn Sekunden.
-- Jedes Level ist fest und sicher lösbar: Es entsteht aus einer kreuzungsfreien Lage durch
-  erlaubte Züge, und jeder erlaubte Zug lässt sich genau umkehren.
-- Im Menü liegen alle gelösten Level als Galerie, mit Sternen.
+- Wird eine Kordel frei, klingt sie wie eine gezupfte Saite. Beim Lösen wird die ganze
+  Harfe von links nach rechts gespielt.
+- Rückgängig ist frei; die Glühbirne zeigt eine Kordel, die obenauf liegt (kostet zehn Sekunden).
+- Jedes Level ist vorab mit der Seilphysik aus einer kreuzungsfreien Lage verknotet worden
+  und zählt nur, wenn es sich rückwärts gespielt wieder vollständig löst.
+
+`knoten/index.html` ist erzeugt. Die Quelle liegt in `knoten/src/` (Seilphysik in `rope.js`),
+neu bauen mit `node knoten/tools/build.js`. Die Level erzeugt `node knoten/tools/levels.js 60`
+(dauert einige Minuten).
 
 ---
 
