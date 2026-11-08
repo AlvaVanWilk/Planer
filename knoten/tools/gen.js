@@ -1,8 +1,11 @@
-// Level-Erzeugung mit der Seilphysik:
-// kreuzungsfreie Lösung legen, dann mit echten Zügen (Ende angehoben in eine freie Öse)
-// verknoten. Zur Probe werden die Züge rückwärts gespielt – das Level zählt nur,
-// wenn danach wirklich alles frei ist.
-const { Rope, move, settle, crossCount } = require("./sim.js");
+// Level-Erzeugung mit der Seilphysik.
+// 1. kreuzungsfreie Lösung legen
+// 2. verknoten: Enden angehoben in freie Ösen führen – und wo die Kordel unter einer
+//    anderen liegt, das Ende in einem Bogen um deren Öse herum. So entstehen echte
+//    Umschlingungen und mehrfache Verwirbelungen.
+// 3. Probe: alle Züge mit umgekehrtem Weg rückwärts – nur wenn danach alles frei ist,
+//    zählt das Level.
+const { Rope, move, settle, crossCount, tangle } = require("./sim.js");
 
 function mulberry32(a) {
   return function () {
@@ -16,40 +19,47 @@ const range = (n) => Array.from({ length: n }, (_, i) => i);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 function segX(a, b, c, d) {
   const o = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
-  const d1 = o(c, d, a), d2 = o(c, d, b), d3 = o(a, b, c), d4 = o(a, b, d);
-  return d1 * d2 < 0 && d3 * d4 < 0;
+  return o(c, d, a) * o(c, d, b) < 0 && o(a, b, c) * o(a, b, d) < 0;
 }
 function near(p, a, b) {
   const vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy;
   const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / L));
-  return Math.hypot(a.x + vx * t - p.x, a.y + vy * t - p.y) < 0.2;
+  return Math.hypot(a.x + vx * t - p.x, a.y + vy * t - p.y) < 0.25;
 }
 const hit = (A, B, C, D) => segX(A, B, C, D) || near(C, A, B) || near(D, A, B) || near(A, C, D) || near(B, C, D);
 
 function params(L) {
-  const [cols, rows] = L <= 6 ? [4, 5] : L <= 18 ? [4, 6] : L <= 36 ? [5, 6] : [5, 7];
-  const cells = cols * rows, emptyMin = Math.max(4, Math.ceil(cells * 0.25));
-  const r = Math.min(Math.floor((cells - emptyMin) / 2), 2 + Math.floor((L + 1) / 3));
-  const S = Math.min(18, 2 + Math.floor(L * 0.45));
-  return { cols, rows, cells, r, S };
+  const [cols, rows] = L <= 8 ? [4, 5] : L <= 24 ? [4, 6] : L <= 40 ? [5, 6] : [5, 7];
+  const r = Math.min(L <= 24 ? 7 : 8, 2 + Math.floor((L + 2) / 4));
+  const S = Math.min(14, 2 + Math.floor(L * 0.3));
+  const loops = Math.min(0.75, 0.35 + L * 0.01);      // Anteil der Bogenzüge
+  return { cols, rows, cells: cols * rows, r, S, loops };
 }
-// Paare, die sich mehr als einmal kreuzen = verdreht
-function twistInfo(w) {
-  const cnt = new Map();
-  for (const c of Rope.crossings(w)) { const k = c.a + "_" + c.b; cnt.set(k, (cnt.get(k) || 0) + 1); }
-  let twisted = 0, maxTw = 0;
-  for (const v of cnt.values()) { if (v >= 2) twisted++; maxTw = Math.max(maxTw, v); }
-  return { twisted, maxTw };
+
+// Wegpunkte für einen Bogen um die Öse Q (Startwinkel von S aus, `turns` Umläufe)
+function arcAround(Q, S, D, turns, dir, cols, rows) {
+  const rad = 0.42, pts = [];
+  const a0 = Math.atan2(S.y - Q.y, S.x - Q.x), aD = Math.atan2(D.y - Q.y, D.x - Q.x);
+  let span = dir * turns * Math.PI * 2;
+  // so enden, dass es zur Zielöse hin weitergeht
+  let extra = (aD - (a0 + span)) * dir; while (extra < 0) extra += Math.PI * 2;
+  span += dir * extra;
+  const n = Math.max(6, Math.ceil(Math.abs(span) / 0.45));
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + (span * i) / n;
+    pts.push({ x: Math.max(-0.6, Math.min(cols - 0.4, Q.x + Math.cos(a) * rad)), y: Math.max(-0.6, Math.min(rows - 0.4, Q.y + Math.sin(a) * rad)) });
+  }
+  return pts;
 }
 
 function generate(level, seedBump = 0) {
-  const { cols, rows, cells, r, S } = params(level);
-  const rng = mulberry32(((level * 2654435761) ^ (0x9e3779b9 + seedBump * 7919)) >>> 0);
+  const { cols, rows, cells, r, S, loops } = params(level);
+  const rng = mulberry32(((level * 2654435761) ^ (0x7f4a7c15 + seedBump * 7919)) >>> 0);
   const ri = (n) => Math.floor(rng() * n);
   const P = range(cells).map((h) => ({ x: h % cols, y: Math.floor(h / cols) }));
-  // 1. Lösung: kurze, kreuzungsfreie Kordeln mit etwas Abstand
+  // 1. Lösung
   let sol = null;
-  const maxLen = Math.min(3.2, 1.6 + level * 0.03);
+  const maxLen = Math.min(3, 1.5 + level * 0.03);
   for (let att = 0; att < 400 && !sol; att++) {
     const ends = [], occ = new Set();
     for (let t = 0; t < 4000 && ends.length < r; t++) {
@@ -64,41 +74,54 @@ function generate(level, seedBump = 0) {
   if (!sol) return null;
   const w = Rope.createWorld(cols, rows, sol);
   settle(w, 30);
-  // 2. Verknoten
+  // 2. Verknoten: abwechselnd überdecken und einhaken
   const hist = [];
-  let last = -1;
+  const freeHoles = () => { const occ = new Set(); w.ropes.forEach((R) => { occ.add(R.e[0]); occ.add(R.e[1]); }); return range(cells).filter((h) => !occ.has(h)); };
+  const endPos = (r, e) => P[w.ropes[r].e[e]];
+  const doMove = (m) => { move(w, m.r, m.e, m.h, m.via); hist.push(m); };
   for (let k = 0; k < S; k++) {
-    const occ = new Set(); w.ropes.forEach((R) => { occ.add(R.e[0]); occ.add(R.e[1]); });
-    const free = range(cells).filter((h) => !occ.has(h));
+    const free = freeHoles(), cr = Rope.crossings(w);
+    // Einhaken: A liegt unter B → A's Ende spitz um B's nächste Öse herum zurückführen
+    const unders = cr.filter((x) => x.top >= 0);
+    let done = false;
+    if (unders.length && (k % 3 !== 0 || rng() < 0.3)) {
+      for (let t = 0; t < 12 && !done; t++) {
+        const x = unders[ri(unders.length)], B = x.top, A = x.a === B ? x.b : x.a;
+        const ib = x.a === B ? x.ia : x.ib, eB = ib < (Rope.N - 1) / 2 ? 0 : 1, Q = endPos(B, eB);
+        // welches Ende von A bewegen? das, das näher an der Kreuzung liegt
+        const ia = x.a === A ? x.ia : x.ib, eA = ia < (Rope.N - 1) / 2 ? 0 : 1, F = endPos(A, 1 - eA), S0 = endPos(A, eA);
+        let best = null, bs = -Infinity;
+        for (const h of free) {
+          const D = P[h], dQ = dist(D, Q), dF = dist(D, F);
+          if (dQ < 0.9 || dQ > 2.6 || dF < 0.99 || dF > 3.4) continue;
+          const ang = Math.acos(Math.max(-1, Math.min(1, ((F.x - Q.x) * (D.x - Q.x) + (F.y - Q.y) * (D.y - Q.y)) / (dist(F, Q) * dQ || 1))));
+          const sc = -ang + rng() * 0.4;                    // spitzer Haken = besser
+          if (ang < 1.9 && sc > bs) { bs = sc; best = h; }
+        }
+        if (best == null) continue;
+        const turns = rng() < 0.3 ? 1.5 : 0.75;
+        doMove({ r: A, e: eA, h: best, from: w.ropes[A].e[eA], via: arcAround(Q, S0, P[best], turns, rng() < 0.5 ? 1 : -1, cols, rows), kind: "hook" });
+        done = true;
+      }
+    }
+    if (done) continue;
+    // Überdecken: ein Ende gerade quer über möglichst viele andere Kordeln
     let best = null, bs = -Infinity;
     for (let c = 0; c < 40; c++) {
-      const rp = ri(r), e = ri(2);
-      if (rp === last) continue;
-      const R = w.ropes[rp], from = P[R.e[e]], other = P[R.e[1 - e]], h = free[ri(free.length)], to = P[h];
-      if (dist(to, other) < 0.99 || dist(to, other) > 3.6) continue;
-      // Weg und neue Lage sollen über möglichst viele andere Kordeln führen
-      let sc = 0;
-      const cr = Rope.crossings(w);
-      w.ropes.forEach((Q, q) => {
-        if (q === rp) return;
-        const A = P[Q.e[0]], B = P[Q.e[1]];
-        const already = cr.some((c) => (c.a === rp && c.b === q) || (c.a === q && c.b === rp));
-        if (segX(from, to, A, B)) sc += already ? 3 : 1.5;   // nochmal um dieselbe Kordel = Verdrehung
-        if (segX(other, to, A, B)) sc += 1;
-      });
-      sc += rng() * 1.2;
-      if (sc > bs) { bs = sc; best = { r: rp, e, h, from: R.e[e] }; }
+      const rp = ri(r), e = ri(2), R = w.ropes[rp], from = P[R.e[e]], other = P[R.e[1 - e]], h = free[ri(free.length)], to = P[h];
+      if (dist(to, other) < 0.99 || dist(to, other) > 3) continue;
+      const tg = new Set(); cr.forEach((x) => { tg.add(x.a); tg.add(x.b); });
+      let sc = rng() + (tg.has(rp) ? 0 : 3);                    // freie Kordeln zuerst ins Spiel bringen
+      w.ropes.forEach((Q, q) => { if (q !== rp && segX(other, to, P[Q.e[0]], P[Q.e[1]])) sc += tg.has(q) ? 2 : 3.5; });
+      if (sc > bs) { bs = sc; best = { r: rp, e, h, from: R.e[e], via: [], kind: "cover" }; }
     }
-    if (!best) continue;
-    move(w, best.r, best.e, best.h);
-    hist.push(best); last = best.r;
+    if (best) doMove(best);
   }
-  const start = Rope.snapshot(w), packed = Rope.pack(w);
-  const cross = crossCount(w), tw = twistInfo(w);
-  // 3. Probe: rückwärts spielen muss alles lösen
-  for (let i = hist.length - 1; i >= 0; i--) move(w, hist[i].r, hist[i].e, hist[i].from);
-  settle(w, 120);
+  const start = Rope.snapshot(w), packed = Rope.pack(w), tg = tangle(w);
+  // 3. Probe rückwärts, jeweils auf dem umgekehrten Weg
+  for (let i = hist.length - 1; i >= 0; i--) { const m = hist[i]; move(w, m.r, m.e, m.from, m.via.slice().reverse()); }
+  settle(w, 150);
   const solvedBack = crossCount(w) === 0;
-  return { level, cols, rows, r, moves: hist.length, cross, twisted: tw.twisted, maxTw: tw.maxTw, solvedBack, packed, start, hist, sol };
+  return { level, cols, rows, r, moves: hist.length, loops: hist.filter((m) => m.kind === "hook").length, ...tg, solvedBack, packed, start, hist, sol };
 }
 module.exports = { generate, params };

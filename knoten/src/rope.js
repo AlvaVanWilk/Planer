@@ -18,6 +18,8 @@
   const DAMP = 0.985;
   const SPEED = 7;        // Höchsttempo eines gezogenen Endes (Einheiten/s)
   const D2 = 2 * RAD;
+  const FRICTION = 0.35;  // Haftung zwischen Kordeln
+  const PEG_R = 0.12 + RAD, PEG_H = 1.6 * RAD;
 
   function createWorld(cols, rows, ends) {
     const P = [];
@@ -48,7 +50,7 @@
   function restLen(w, R) {
     const a = R.x, i = (N - 1) * 3;
     const L = Math.hypot(a[i] - a[0], a[i + 1] - a[1]);
-    return Math.max(0.35, L * 0.98) / (N - 1);
+    return Math.max(0.35, L * 0.92) / (N - 1);
   }
 
   /* ---------- Nächste Punkte zweier Strecken im Raum ---------- */
@@ -129,6 +131,39 @@
     xa[a1] += nx * lam * ca1; xa[a1 + 1] += ny * lam * ca1; xa[a1 + 2] += nz * lam * ca1;
     xb[b0] -= nx * lam * cb0; xb[b0 + 1] -= ny * lam * cb0; xb[b0 + 2] -= nz * lam * cb0;
     xb[b1] -= nx * lam * cb1; xb[b1 + 1] -= ny * lam * cb1; xb[b1 + 2] -= nz * lam * cb1;
+    // Reibung: Kordeln, die sich berühren, gleiten nur zögernd aneinander vorbei
+    const pa = w.ropes[ra].p, pb = w.ropes[rb].p;
+    let rx = (xa[a0] - pa[a0]) * (1 - s) + (xa[a1] - pa[a1]) * s - (xb[b0] - pb[b0]) * (1 - t) - (xb[b1] - pb[b1]) * t;
+    let ry = (xa[a0 + 1] - pa[a0 + 1]) * (1 - s) + (xa[a1 + 1] - pa[a1 + 1]) * s - (xb[b0 + 1] - pb[b0 + 1]) * (1 - t) - (xb[b1 + 1] - pb[b1 + 1]) * t;
+    let rz = (xa[a0 + 2] - pa[a0 + 2]) * (1 - s) + (xa[a1 + 2] - pa[a1 + 2]) * s - (xb[b0 + 2] - pb[b0 + 2]) * (1 - t) - (xb[b1 + 2] - pb[b1 + 2]) * t;
+    const rn = rx * nx + ry * ny + rz * nz;
+    rx -= rn * nx; ry -= rn * ny; rz -= rn * nz;
+    const f = FRICTION / W;
+    xa[a0] -= rx * f * ca0; xa[a0 + 1] -= ry * f * ca0; xa[a0 + 2] -= rz * f * ca0;
+    xa[a1] -= rx * f * ca1; xa[a1 + 1] -= ry * f * ca1; xa[a1 + 2] -= rz * f * ca1;
+    xb[b0] += rx * f * cb0; xb[b0 + 1] += ry * f * cb0; xb[b0 + 2] += rz * f * cb0;
+    xb[b1] += rx * f * cb1; xb[b1 + 1] += ry * f * cb1; xb[b1 + 2] += rz * f * cb1;
+  }
+  // Die Stifte in den Ösen: niedrig liegende Kordeln anderer Farbe müssen um sie herum
+  function pegs(w) {
+    const R = w.ropes;
+    for (let a = 0; a < R.length; a++) for (let e = 0; e < 2; e++) {
+      const j = endIdx(e) * 3, xa = R[a].x;
+      if (xa[j + 2] > 0.05) continue;                 // angehobenes Ende
+      const px = xa[j], py = xa[j + 1];
+      for (let b = 0; b < R.length; b++) {
+        if (b === a) continue;
+        const x = R[b].x;
+        for (let i = 1; i < N - 1; i++) {
+          const k = i * 3;
+          if (x[k + 2] > PEG_H) continue;
+          const dx = x[k] - px, dy = x[k + 1] - py, d2 = dx * dx + dy * dy;
+          if (d2 >= PEG_R * PEG_R) continue;
+          const d = Math.sqrt(d2) || 1e-6, push = (PEG_R - d) / d;
+          x[k] += dx * push; x[k + 1] += dy * push;
+        }
+      }
+    }
   }
   function pinEnds(w, h) {
     w.ropes.forEach((R, r) => {
@@ -162,13 +197,14 @@
           const dx = x[k] - x[j], dy = x[k + 1] - x[j + 1], dz = x[k + 2] - x[j + 2], L = Math.hypot(dx, dy, dz) || 1e-9;
           const wi = i === 0 ? 0 : 1, wk = i + 1 === N - 1 ? 0 : 1, ws = wi + wk;
           if (!ws) continue;
-          const stiff = L > L0 ? 0.9 : 0.25;
+          const stiff = L > L0 ? 0.25 : 0.1;
           const c = ((L - L0) / L / ws) * stiff;
           x[j] += dx * c * wi; x[j + 1] += dy * c * wi; x[j + 2] += dz * c * wi;
           x[k] -= dx * c * wk; x[k + 1] -= dy * c * wk; x[k + 2] -= dz * c * wk;
         }
       }
       collide(w);
+      pegs(w);
       for (const R of w.ropes) {
         const x = R.x;
         for (let i = 1; i < N - 1; i++) if (x[i * 3 + 2] < RAD) x[i * 3 + 2] = RAD;

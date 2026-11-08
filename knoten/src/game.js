@@ -287,7 +287,7 @@ function levelDef(level) {
   const cells = L.c * L.h, r = L.k.split("|")[0].split(";").length;
   const pal = chapterOf(level).cords, rng = mulberry32(level * 7919 + 3);
   const def = {
-    cols: L.c, rows: L.h, cells, r, time: L.t, moves: L.m, k: L.k,
+    cols: L.c, rows: L.h, cells, r, time: L.t, moves: L.m, k: L.k, sol: L.s || [],
     P: range(cells).map((h) => ({ x: h % L.c, y: Math.floor(h / L.c) })),
     colors: cordColors(pal, r, rng),
   };
@@ -312,7 +312,7 @@ const state = {
   level: 1, def: null, world: null, look: [], cross: [],
   phase: "play", moves: 0, timeLeft: 60, started: false, paused: false,
   undo: [], flashes: [], particles: [], rings: [], hint: null,
-  tangled: new Set(), freeAt: new Map(), activeUntil: 0, zeroSince: 0,
+  tangled: new Set(), freeAt: new Map(), activeUntil: 0, zeroSince: 0, solIdx: 0,
   win: null, lost: null, outro: null, lastTick: 0, lowSec: -1, lastSave: 0,
 };
 let drag = null; // { pid, r, e, dx, dy, x, y, target, from, snap }
@@ -345,10 +345,10 @@ function loadLevel(level, opts = {}) {
   const cur = save.cur;
   if (!opts.fresh && cur && cur.level === level && cur.k) {
     try { Rope.unpack(w, cur.k); } catch (e) { Rope.unpack(w, d.k); }
-    state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started;
+    state.moves = cur.m || 0; state.timeLeft = cur.left ?? d.time; state.started = !!cur.started; state.solIdx = cur.sol ?? -1;
   } else {
     Rope.unpack(w, d.k);
-    state.moves = 0; state.timeLeft = d.time; state.started = false;
+    state.moves = 0; state.timeLeft = d.time; state.started = false; state.solIdx = 0;
   }
   const t = now();
   state.look = d.colors.map((hx, i) => {
@@ -420,7 +420,7 @@ const TIPS = {
   1: "Ziehe ein Kordelende in eine freie Öse. Die Kordeln sind wirklich verknotet – sie verfangen sich ineinander.",
   2: "Schau, wie die Kordeln umeinander laufen, und führe ein Ende den Weg zurück, den es gekommen ist.",
   4: "Die Uhr läuft ab dem ersten Griff. Die Rauten zeigen, wie viele Sterne noch drin sind.",
-  7: "Die Glühbirne zeigt eine Kordel, die obenauf liegt – sie kostet aber zehn Sekunden.",
+  7: "Die Glühbirne zeigt dir den nächsten Zug – sie kostet aber zehn Sekunden.",
 };
 let tipTimer = 0;
 function showTipFor(level) {
@@ -437,7 +437,7 @@ function tipDone() {
 }
 function saveCur() {
   if (state.phase !== "play" || !state.world) return;
-  save.cur = { level: state.level, k: Rope.pack(state.world), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started };
+  save.cur = { level: state.level, k: Rope.pack(state.world), m: state.moves, left: Math.round(state.timeLeft * 10) / 10, started: state.started, sol: state.solIdx };
   persist(true);
 }
 
@@ -509,7 +509,10 @@ function endPointer(e) {
   const moved = e.type !== "pointercancel" && d.target >= 0 && d.target !== d.from;
   if (moved) {
     R.e[d.e] = d.target;
-    state.undo.push(d.snap); if (state.undo.length > 60) state.undo.shift();
+    state.undo.push({ snap: d.snap, sol: state.solIdx }); if (state.undo.length > 60) state.undo.shift();
+    // folgt der Zug dem bekannten Lösungsweg?
+    const nx = state.def.sol[state.solIdx];
+    state.solIdx = state.solIdx >= 0 && nx && nx[0] === d.r && nx[1] === d.e && nx[2] === d.target ? state.solIdx + 1 : -1;
     state.moves++;
     Sound.seat(); haptic(10);
     tipDone();
@@ -525,27 +528,35 @@ document.addEventListener("dblclick", (e) => e.preventDefault());
 
 function undo() {
   if (!canAct() || drag || !state.undo.length) return;
-  Rope.restore(state.world, state.undo.pop());
+  const u = state.undo.pop();
+  Rope.restore(state.world, u.snap); state.solIdx = u.sol;
   state.cross = Rope.crossings(state.world); state.tangled = tangledOf(state.cross); state.freeAt.clear();
   wakePhysics(800); updateUndo(); updateHud(); saveCur();
   Sound.tone(392, { dur: 0.5, vol: 0.05, bright: 1500 }); haptic(5);
 }
-// Tipp: die Kordel, die am meisten obenauf liegt
+// Tipp: solange man dem Lösungsweg folgt, zeigt er den nächsten Zug mit seinem Bogen;
+// sonst die Kordel, die am meisten obenauf liegt
 function hint() {
   if (!canAct() || drag || !state.cross.length) return;
   Sound.init();
-  const score = new Array(state.def.r).fill(0), has = new Array(state.def.r).fill(0);
-  for (const c of state.cross) {
-    const bottom = c.top === c.a ? c.b : c.a;
-    score[c.top] += 1; score[bottom] -= 1.2; has[c.a] = has[c.b] = 1;
+  const nx = state.solIdx >= 0 ? state.def.sol[state.solIdx] : null;
+  if (nx) {
+    state.hint = { r: nx[0], e: nx[1], h: nx[2], via: nx[3].map(([x, y]) => ({ x, y })), t0: now() };
+    flashPill("Tipp · folge dem goldenen Weg");
+  } else {
+    const score = new Array(state.def.r).fill(0), has = new Array(state.def.r).fill(0);
+    for (const c of state.cross) {
+      const bottom = c.top === c.a ? c.b : c.a;
+      score[c.top] += 1; score[bottom] -= 1.2; has[c.a] = has[c.b] = 1;
+    }
+    let best = -1; score.forEach((sc, r) => { if (has[r] && (best < 0 || sc > score[best])) best = r; });
+    if (best < 0) return;
+    state.hint = { r: best, t0: now() };
+    flashPill("Tipp · diese Kordel liegt obenauf");
   }
-  let best = -1; score.forEach((s, r) => { if (has[r] && (best < 0 || s > score[best])) best = r; });
-  if (best < 0) return;
-  state.hint = { r: best, t0: now() };
   startClock();
   state.timeLeft = Math.max(1, state.timeLeft - 10);
   updateTimer(); saveCur();
-  flashPill("Tipp · diese Kordel liegt obenauf");
   Sound.tone(659.25, { dur: 1.2, vol: 0.06, bright: 2600, bell: true });
   const b = $("#bHint"); b.classList.remove("hint-on"); void b.offsetWidth; b.classList.add("hint-on");
   wake();
@@ -719,7 +730,7 @@ function update(t, dt) {
   state.particles = state.particles.filter((p) => t - p.t0 < p.life);
   if (state.flashes.length || state.rings.length || state.particles.length) busy = true;
   if (state.cross.length && state.phase === "play") busy = true;
-  if (state.hint && t - state.hint.t0 > 3200) state.hint = null;
+  if (state.hint && t - state.hint.t0 > (state.hint.h != null ? 5000 : 3200)) state.hint = null;
   if (state.hint) busy = true;
   if (state.lost && t - state.lost.t0 < 1500) busy = true;
   if (state.win) {
@@ -890,10 +901,19 @@ function draw(t) {
   }
   /* --- Tipp --- */
   if (state.hint) {
-    const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp((3200 - el2) / 400, 0, 1);
+    const hn = state.hint, el2 = t - hn.t0, a = base * clamp(el2 / 250, 0, 1) * clamp(((hn.h != null ? 5000 : 3200) - el2) / 400, 0, 1);
     glowRope(P[hn.r], a * (0.3 + 0.15 * Math.sin(el2 * 0.01)));
     ctx.strokeStyle = rgba(GOLD_HI, 1);
+    if (hn.h != null) {
+      const from = hn.e ? P[hn.r][N - 1] : P[hn.r][0], pts = [from, ...hn.via.map(g2s), g2s(d.P[hn.h])];
+      ctx.globalAlpha = a * 0.85; ctx.setLineDash([4, 6]); ctx.lineDashOffset = -el2 * 0.03; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+      ctx.setLineDash([]);
+      const to = pts[pts.length - 1];
+      glowAt(sprites.glow, to.x, to.y, HOLE * 5 * s, a * 0.55);
+    }
     for (let e = 0; e < 2; e++) {
+      if (hn.h != null && e !== hn.e) continue;
       const from = e ? P[hn.r][N - 1] : P[hn.r][0];
       for (let k = 0; k < 2; k++) {
         const p = ((el2 + k * 600) % 1200) / 1200;
@@ -1021,6 +1041,7 @@ window.__knoten = {
   state, save, levelDef, Rope,
   level: (n) => loadLevel(n, { fresh: true }),
   holeScreen: (h) => g2s(state.def.P[h]),
+  gridScreen: (x, y) => g2s({ x, y }),
   endScreen: (r, e) => g2s(endGrid(r, e)),
 };
 })();
