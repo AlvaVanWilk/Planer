@@ -138,7 +138,7 @@
   }
   AU.soundOn = save.set.sound; AU.musicOn = save.set.music;
 
-  const RANKS = [[0, "Kiesel"], [5, "Scherbe"], [14, "Glasstein"], [26, "Tessera"], [42, "Smalte"], [60, "Fries"], [80, "Fresko"], [100, "Meisterwerk"]];
+  const RANKS = [[0, "Kiesel"], [5, "Scherbe"], [14, "Glasstein"], [26, "Tessera"], [42, "Smalte"], [60, "Fries"], [80, "Fresko"], [100, "Basilika"], [122, "Kathedrale"], [140, "Meisterwerk"]];
   const totalStars = () => Object.values(save.solved).reduce((s, r) => s + (r.stars || 0), 0);
   const rankOf = n => { let i = 0; while (i + 1 < RANKS.length && n >= RANKS[i + 1][0]) i++; return i; };
   const solvedIn = w => w.list.filter(p => save.solved[p.id]).length;
@@ -514,7 +514,7 @@
   function renderHome() {
     const st = totalStars(), rk = rankOf(st);
     $("#rankName").textContent = RANKS[rk][1];
-    const lo = RANKS[rk][0], hi = rk + 1 < RANKS.length ? RANKS[rk + 1][0] : 108;
+    const lo = RANKS[rk][0], hi = rk + 1 < RANKS.length ? RANKS[rk + 1][0] : PICS.length * 3;
     requestAnimationFrame(() => { $("#rankBar").style.width = (rk + 1 < RANKS.length ? clamp((st - lo) / (hi - lo)) * 100 : 100) + "%"; });
     $("#starCount").textContent = st + " ★";
     let top = 0; WORLDS.forEach((w, i) => { if (unlocked(i)) top = i; });

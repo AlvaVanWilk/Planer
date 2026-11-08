@@ -92,7 +92,7 @@ eine einzelne Datei ohne Server. Nach dem Einschalten von GitHub Pages liegt es 
 - **Farbenzauber** (Standard): Jeder richtige Stein leuchtet sofort in seiner Farbe auf, Fehler werden
   korrigiert und kosten Sterne. **Klassisch**: wie in der Zeitschrift, Farben erst am Ende; zwei Finger
   tippen macht den letzten Zug rückgängig.
-- 36 Bilder in sechs Welten (10×10 bis 20×20), jede mit eigener Farbstimmung und Tonart.
+- 48 Bilder in acht Welten (10×10 bis 22×22), jede mit eigener Farbstimmung und Tonart.
   Vier gelöste Bilder öffnen die nächste Welt. Sterne ergeben Ränge, gelöste Bilder landen in der Galerie.
 - Jedes Rätsel ist eindeutig und ohne Raten lösbar; das prüft der eingebaute Löser beim Bauen.
 - Fortschritt wird im Browser gespeichert. Klänge und Musik werden live erzeugt.
