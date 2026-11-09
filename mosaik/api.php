@@ -14,6 +14,7 @@ const MAX_SAVE_BYTES = 300000;   // Größe eines Spielstands
 const MAX_TOKENS = 12;           // gleichzeitig angemeldete Geräte je Konto
 const LOCK_AFTER = 8;            // Fehlversuche bis zur Sperre
 const LOCK_SECONDS = 300;        // Dauer der Sperre
+const API_VERSION = '2026-11-10T00:31';            // wird beim Bauen gesetzt
 const DROPS = 4;                 // Familientropfen je Person im Gemeinschaftswerk
 const DROP_BACK = 7200;          // ein verlorener Tropfen kommt nach 2 Stunden zurück
 
@@ -68,6 +69,31 @@ function findByToken($name, $token) {
   fail('Bitte melde dich neu an.', 401);
 }
 
+// Familienmosaik: Steine, die nur in der Konto-Kopie eines Geräts stehen (etwa von einer älteren
+// Spielversion, die nie nachgesendet hat), in den gemeinsamen Stand übernehmen.
+function healCoop($who, $save) {
+  global $dir;
+  if (!is_array($save) || !is_array($save['coop'] ?? null)) return;
+  foreach ($save['coop'] as $id => $c0) {
+    $st = is_array($c0) ? ($c0['st'] ?? '') : '';
+    if (!is_string($st) || !preg_match('/^[a-z0-9_-]{1,32}$/', (string)$id) || !preg_match('/^[01?]+$/', $st)) continue;
+    $path = "$dir/coop_$id.php";
+    $f = fopen($path, 'c+'); if (!$f || !flock($f, LOCK_EX)) continue;
+    $raw = stream_get_contents($f);
+    $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
+    if (!is_array($c)) $c = ['n' => strlen($st), 'state' => str_repeat('?', strlen($st)), 'ver' => 0, 'by' => [], 'recent' => [], 'seen' => [], 'done' => 0];
+    if (($c['n'] ?? 0) !== strlen($st) || !empty($c['done'])) { flock($f, LOCK_UN); fclose($f); continue; }
+    $added = 0;
+    for ($i = 0; $i < $c['n']; $i++) if ($st[$i] !== '?' && $c['state'][$i] === '?') { $c['state'][$i] = $st[$i]; $added++; }
+    if ($added) {
+      $c['ver']++; $c['by'][$who] = ($c['by'][$who] ?? 0) + $added;
+      if (strpos($c['state'], '?') === false) { $c['done'] = time(); $c['last'] = $who; }
+      ftruncate($f, 0); rewind($f); fwrite($f, GUARD . json_encode($c, JSON_UNESCAPED_UNICODE)); fflush($f);
+    }
+    flock($f, LOCK_UN); fclose($f);
+  }
+}
+
 // Besser: mehr Sterne, bei gleichen Sternen schneller
 function betterRec($a, $b) {
   $sa = (int)($a['stars'] ?? 0); $sb = (int)($b['stars'] ?? 0);
@@ -88,7 +114,7 @@ function mergeSave($old, $new) {
   return $new;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') out(['ok' => true, 'app' => 'mosaik', 'register' => FAMILY_CODE !== 'BITTE-AENDERN']);
+if ($_SERVER['REQUEST_METHOD'] === 'GET') out(['ok' => true, 'app' => 'mosaik', 'register' => FAMILY_CODE !== 'BITTE-AENDERN', 'ver' => API_VERSION]);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Nur POST.', 405);
 
 $body = file_get_contents('php://input');
@@ -145,6 +171,7 @@ switch ($action) {
     if (!is_array($save)) fail('Ungültiger Spielstand.');
     if (strlen(json_encode($save)) > MAX_SAVE_BYTES) fail('Spielstand zu groß.', 413);
     $u['save'] = !empty($in['reset']) ? $save : mergeSave($u['save'], $save);
+    healCoop($u['name'], $save);
     $u['updated'] = time();
     writeUser($key, $u);
     out(['ok' => true, 'save' => $u['save']]);

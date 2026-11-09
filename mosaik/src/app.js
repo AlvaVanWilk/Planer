@@ -94,9 +94,15 @@
       setTimeout(() => ctl && ctl.abort(), 4000);
       const r = await fetch("api.php", { cache: "no-store", signal: ctl ? ctl.signal : undefined });
       const j = await r.json();
-      if (j && j.ok && j.app === "mosaik") { ACC.online = true; ACC.canRegister = !!j.register; return true; }
+      if (j && j.ok && j.app === "mosaik") { ACC.online = true; ACC.canRegister = !!j.register; ACC.apiver = j.ver || ""; showVersion(); return true; }
     } catch (e) { /* kein PHP hier */ }
     return false;
+  }
+  function showVersion() {
+    const B = window.MOSAIK_BUILD || "", fmt = v => v.slice(8, 10) + "." + v.slice(5, 7) + "." + v.slice(0, 4) + ", " + v.slice(11, 16) + " Uhr";
+    let t = B ? "Spiel vom " + fmt(B) : "";
+    if (ACC.online) t += ACC.apiver ? " · Server vom " + fmt(ACC.apiver) : " · Server: alte Version, bitte api.php neu hochladen";
+    const el = document.getElementById("ver"); if (el) el.textContent = t;
   }
   function rememberAccount() {
     try { if (ACC.token) localStorage.setItem(ACCKEY, JSON.stringify({ name: ACC.name, token: ACC.token })); else localStorage.removeItem(ACCKEY); } catch (e) { /* egal */ }
@@ -1722,7 +1728,7 @@
     c.missQ = 0; coopBusy = true;
     const j = await api({ action: "coop", name: ACC.name, token: ACC.token, id: g.pic.id, n: g.N, ver: c.ver, cells, miss });
     coopBusy = false;
-    if (!j.ok) { c.queue.unshift(...cells); c.missQ += miss; c.offline = true; hud(); if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (!j.ok) { c.queue.unshift(...cells); c.missQ += miss; c.offline = true; if (G === g) hud(); if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
     if (G !== g) return;
     c.ver = j.ver; c.active = j.active || []; c.by = j.by || {}; c.miss = j.miss || {}; c.last = j.last || "";
     if (j.now) { c.off = j.now - Math.floor(Date.now() / 1000); c.loss = (j.loss || []).slice(); save.coop[g.pic.id] = Object.assign(save.coop[g.pic.id] || {}, { loss: c.loss.slice() }); }
@@ -2253,7 +2259,7 @@
   renderHome();
   // Version anzeigen und prüfen, ob auf dem Webspace eine neuere liegt (Safari hält alte Seiten gern fest)
   const BUILD = window.MOSAIK_BUILD || "";
-  $("#ver").textContent = BUILD ? "Version vom " + BUILD.slice(8, 10) + "." + BUILD.slice(5, 7) + "." + BUILD.slice(0, 4) + ", " + BUILD.slice(11, 16) + " Uhr" : "";
+  showVersion();
   async function checkUpdate() {
     if (location.protocol === "file:" || !BUILD) return;
     try {
