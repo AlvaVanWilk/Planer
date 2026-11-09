@@ -576,6 +576,7 @@
       box.appendChild(card);
     });
     logoTiles();
+    requestAnimationFrame(() => paintCoopPreviews(false));
   }
 
   /* ---------- Gemeinschaftswerke: Übersicht ---------- */
@@ -592,25 +593,86 @@
     card.className = "world special coopw";
     card.style.setProperty("--a", w.mood[0]); card.style.setProperty("--b", w.mood[1]); card.style.setProperty("--c", w.mood[2]);
     const active = new Set(); if (coopList) for (const id in coopList) (coopList[id].active || []).forEach(n => { if (n !== ACC.name) active.add(n); });
-    const note = ACC.online && ACC.token ? (active.size ? "Gerade dabei: " + [...active].map(esc).join(", ") : "Alle aus der Familie legen am selben Bild.")
-      : ACC.online ? "Melde dich an, um mit der Familie gemeinsam zu legen." : "Ohne eigenen Webspace legst du hier allein.";
+    const note = coopNote(active);
     card.innerHTML = `<span class="badge">Gemeinsam · immer offen</span><header><h2>${w.name}</h2><span class="meta">${w.list[0].W}×${w.list[0].H}</span></header><p>${w.sub}. ${note}</p><div class="cthumbs"></div>`;
     const th = card.querySelector(".cthumbs");
     w.list.forEach(p => {
       const b = document.createElement("button"), open = coopOpen(p), done = coopDone(p), k = coopKnown(p);
       b.className = "cthumb" + (open ? "" : " locked");
       if (done) { const cv = document.createElement("canvas"); b.appendChild(cv); drawMosaic(cv, p, 200); b.insertAdjacentHTML("beforeend", `<span class="ccap">${p.title}</span>`); }
+      else if (open) {
+        b.classList.add("live");
+        b.innerHTML = `<canvas class="cprev" data-id="${p.id}"></canvas><span class="ccap"><b>${Math.floor(k * 100)} %</b> · Gemeinschaftswerk ${p.pi + 1}</span>`;
+      }
       else b.innerHTML = `<span class="cnum">${open ? Math.floor(k * 100) + " %" : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'}</span><span class="ccap">${open ? "Gemeinschaftswerk " + (p.pi + 1) : "Öffnet sich, wenn Werk " + p.pi + " fertig ist"}</span><span class="pr"><i style="width:${Math.round(k * 100)}%"></i></span>`;
       if (open) b.onclick = () => { AU.init(); AU.ui(); startGame(p); }; else b.disabled = true;
       th.appendChild(b);
     });
     return card;
   }
-  async function refreshCoopList() {
-    if (!ACC.online || !ACC.token || !COOP) return;
-    const j = await api({ action: "coop_list", name: ACC.name, token: ACC.token, ids: COOP.list.map(p => p.id) });
-    if (j.ok) { coopList = j.list; if (screen === "home") renderHome(); }
+  function coopNote(active) {
+    return ACC.online && ACC.token ? (active.size ? "Gerade dabei: " + [...active].map(esc).join(", ") : "Alle aus der Familie legen am selben Bild.")
+      : ACC.online ? "Melde dich an, um mit der Familie gemeinsam zu legen." : "Ohne eigenen Webspace legst du hier allein.";
   }
+  const coopSig = () => COOP ? COOP.list.map(p => (coopOpen(p) ? 1 : 0) + "" + (coopDone(p) ? 1 : 0)).join("") : "";
+  async function refreshCoopList(live) {
+    if (!ACC.online || !ACC.token || !COOP) return;
+    const before = coopSig();
+    const j = await api({ action: "coop_list", name: ACC.name, token: ACC.token, ids: COOP.list.map(p => p.id), state: true });
+    if (!j.ok) return;
+    coopList = j.list;
+    if (screen !== "home") return;
+    if (!live || coopSig() !== before) { renderHome(); return; }
+    // nur Vorschau und Hinweis aktualisieren, ohne die Seite neu aufzubauen
+    paintCoopPreviews(true);
+    const active = new Set(); for (const id in coopList) (coopList[id].active || []).forEach(n => { if (n !== ACC.name) active.add(n); });
+    const pEl = document.querySelector(".coopw > p"); if (pEl) pEl.innerHTML = COOP.sub + ". " + coopNote(active);
+    document.querySelectorAll(".cthumb.live").forEach(b => { const cv = b.querySelector("canvas"), p = cv && byId(cv.dataset.id); if (p) b.querySelector(".ccap b").textContent = Math.floor(coopKnown(p) * 100) + " %"; });
+  }
+  /* Live-Vorschau der angefangenen Familienmosaike in der Übersicht */
+  const coopPrev = {}, coopFlash = [];
+  let flashRaf = 0;
+  function coopStateOf(p) {
+    const live = coopList && coopList[p.id] && coopList[p.id].state;
+    return live || (save.coop[p.id] && save.coop[p.id].st) || "";
+  }
+  function paintCoopPreviews(animate) {
+    const t = now();
+    document.querySelectorAll("canvas.cprev").forEach(cv => {
+      const p = byId(cv.dataset.id); if (!p) return;
+      const st = coopStateOf(p), prev = coopPrev[p.id];
+      if (animate && prev && st) for (let i = 0; i < p.N; i++) if (st[i] !== "?" && prev[i] === "?") coopFlash.push({ id: p.id, i, t: t + Math.random() * 600 });
+      coopPrev[p.id] = st;
+      drawCoopPreview(cv, p, st, t);
+    });
+    if (coopFlash.length && !flashRaf) flashRaf = requestAnimationFrame(flashLoop);
+  }
+  function flashLoop() {
+    flashRaf = 0;
+    const t = now();
+    for (let k = coopFlash.length - 1; k >= 0; k--) if (t - coopFlash[k].t > 2400) coopFlash.splice(k, 1);
+    document.querySelectorAll("canvas.cprev").forEach(cv => { const p = byId(cv.dataset.id); if (p) drawCoopPreview(cv, p, coopPrev[p.id] || "", t); });
+    if (coopFlash.length && screen === "home") flashRaf = requestAnimationFrame(flashLoop);
+  }
+  function drawCoopPreview(cv, p, st, t) {
+    const d = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth || 200, h = cv.clientHeight || 133;
+    if (cv.width !== Math.round(w * d)) { cv.width = Math.round(w * d); cv.height = Math.round(h * d); }
+    const c = cv.getContext("2d"), cell = Math.min(cv.width / p.W, cv.height / p.H), ox = (cv.width - cell * p.W) / 2, oy = (cv.height - cell * p.H) / 2;
+    c.fillStyle = "#15111c"; c.fillRect(0, 0, cv.width, cv.height);
+    const g = cell > 3 ? cell * 0.12 : 0;
+    for (let i = 0; i < p.N; i++) {
+      const ch = st[i] || "?", x = ox + (i % p.W) * cell, y = oy + Math.floor(i / p.W) * cell;
+      c.fillStyle = ch === "1" ? p.col[i] : ch === "0" ? "#241f2e" : "#8e8a9c";
+      c.fillRect(x + g / 2, y + g / 2, cell - g, cell - g);
+    }
+    for (const f of coopFlash) if (f.id === p.id && t >= f.t) {
+      const q = (t - f.t) / 2400, x = ox + (f.i % p.W) * cell + cell / 2, y = oy + Math.floor(f.i / p.W) * cell + cell / 2, r = cell * (1.2 + 2.4 * q);
+      const gr = c.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, "rgba(255,248,220," + (0.85 * (1 - q)) + ")"); gr.addColorStop(1, "rgba(255,248,220,0)");
+      c.fillStyle = gr; c.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+  }
+  // Übersicht alle 5 Sekunden auffrischen, solange sie zu sehen ist
+  setInterval(() => { if (screen === "home" && !document.hidden && COOP) refreshCoopList(true); }, 5000);
 
   function nextPic(pref) {
     if (pref && !save.solved[pref.id]) return pref;
@@ -728,7 +790,7 @@
     const wrap = $("#boardWrap").getBoundingClientRect();
     const { W, H } = G.pic;
     L.cam = !!G.pic.coop;
-    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = !L.cam;
+    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = $("#miniTog").hidden = !L.cam;
     $("#boardShadow").style.display = L.cam ? "none" : "";
     if (L.cam) {
       // Großes Bild: Leinwand = Ausschnitt, die Welt dahinter lässt sich schieben und zoomen
@@ -815,11 +877,17 @@
     const wx = L.xs[i % W] + L.s / 2, wy = L.ys[Math.floor(i / W)] + L.s / 2;
     return L.cam ? [r.left + (wx - L.cx) * L.z, r.top + (wy - L.cy) * L.z] : [r.left + wx, r.top + wy];
   }
+  // Überstand: Das Bild lässt sich so weit über den Rand schieben, dass jede Ecke unter Karte,
+  // Pfeilen und Zoom-Knöpfen hervorkommt.
+  function camMargin() {
+    const mi = $("#mini"), mw = mi.hidden || mi.classList.contains("small") ? 60 : mi.offsetWidth + 24, mh = mi.hidden || mi.classList.contains("small") ? 60 : mi.offsetHeight + 24;
+    return [Math.max(70, mw, 70) / L.z, Math.max(70, mh, 200) / L.z];
+  }
   function clampCam() {
     L.z = clamp(L.z, L.zMin, L.zMax);
-    const vw = L.cw / L.z, vh = L.ch / L.z;
-    L.cx = vw >= L.wW ? (L.wW - vw) / 2 : clamp(L.cx, -L.s, L.wW - vw + L.s);
-    L.cy = vh >= L.wH ? (L.wH - vh) / 2 : clamp(L.cy, -L.s, L.wH - vh + L.s);
+    const vw = L.cw / L.z, vh = L.ch / L.z, [mx, my] = camMargin();
+    L.cx = vw >= L.wW + 2 * mx ? (L.wW - vw) / 2 : clamp(L.cx, -mx, L.wW - vw + mx);
+    L.cy = vh >= L.wH + 2 * my ? (L.wH - vh) / 2 : clamp(L.cy, -my, L.wH - vh + my);
   }
   // Zoomen um einen Bildschirmpunkt
   function zoomAt(sx, sy, z) {
@@ -1154,6 +1222,7 @@
     if (!G || !L.cam) return;
     const pic = G.pic, mw = Math.min(190, Math.max(120, L.cw * 0.24)), mh = mw * pic.H / pic.W, dd = L.d;
     if (mini.width !== Math.round(mw * dd)) { mini.width = Math.round(mw * dd); mini.height = Math.round(mh * dd); mini.style.width = mw + "px"; mini.style.height = mh + "px"; rebuild = true; }
+    $("#miniTog").style.bottom = (mini.classList.contains("small") ? 10 : 10 + mh - 16) + "px";
     if (rebuild || !miniBase) {
       if (!miniBase) miniBase = document.createElement("canvas");
       miniBase.width = pic.W; miniBase.height = pic.H;
@@ -1176,7 +1245,12 @@
     const r = mini.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
     L.cx = fx * L.wW - L.cw / L.z / 2; L.cy = fy * L.wH - L.ch / L.z / 2; clampCam(); camMoved();
   };
-  mini.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); try { mini.setPointerCapture(e.pointerId); } catch (_) { /* egal */ } mini.dragging = true; miniJump(e); });
+  mini.addEventListener("pointerdown", e => { e.preventDefault(); e.stopPropagation(); if (mini.classList.contains("small")) return; try { mini.setPointerCapture(e.pointerId); } catch (_) { /* egal */ } mini.dragging = true; miniJump(e); });
+  $("#miniTog").onclick = () => {
+    AU.ui(); const small = mini.classList.toggle("small");
+    $("#miniTog").setAttribute("aria-label", small ? "Karte zeigen" : "Karte einklappen"); $("#miniTog").classList.toggle("folded", small);
+    mini.style.visibility = small ? "hidden" : ""; clampCam(); camMoved();
+  };
   mini.addEventListener("pointermove", e => { if (mini.dragging) miniJump(e); });
   mini.addEventListener("pointerup", () => { mini.dragging = false; });
 
@@ -1672,7 +1746,7 @@
     const aw = side ? cr.left - wr.left - 16 : wr.width, ah = side ? wr.height : cr.top - wr.top - 12;
     L.z = Math.min(aw / L.wW, ah / L.wH) * 0.98;
     L.cx = L.wW / 2 - (aw / 2) / L.z; L.cy = L.wH / 2 - (ah / 2) / L.z;
-    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = true;
+    $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = $("#miniTog").hidden = true;
     L.SS = 0; wantSprites(); kick();
   }
   // Ehrungen: fleißigste Hand, ruhigste Hand (ab 50 Steinen), Schlussstein
@@ -1802,7 +1876,7 @@
 
   function showCard(on) {
     const box = $("#win");
-    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); if (L.cam) { $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = false; L.z = L.zMin; clampCam(); camMoved(); } return; }
+    if (!on) { box.hidden = true; fitBoard(false); $("#game").classList.remove("won"); if (L.cam) { $("#mini").hidden = $("#zoomBox").hidden = $("#edgeArrows").hidden = $("#miniTog").hidden = false; L.z = L.zMin; clampCam(); camMoved(); } return; }
     if (!G || !G.result) return;
     if (G.result.coop) {
       const pic = G.pic, nxt = COOP.list[pic.pi + 1];
