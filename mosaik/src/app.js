@@ -124,12 +124,34 @@
     merged.solved = Object.assign({}, save.solved, j.save.solved || {});
     for (const id of Object.keys(save.solved)) if (j.save.solved && j.save.solved[id] && better(save.solved[id], j.save.solved[id])) merged.solved[id] = save.solved[id];
     merged.prog = Object.assign({}, save.prog, j.save.prog || {});
+    merged.coop = mergeCoop(save.coop, j.save.coop);
+    merged.coopDone = Object.assign({}, j.save.coopDone || {}, save.coopDone);
     if (!G) { useSave(merged); persist(true); if (screen === "home") renderHome(); }
+  }
+  // Familienmosaike nie verkleinern: gelegte Felder aus beiden Ständen vereinen
+  function mergeCoop(a, b) {
+    const out = Object.assign({}, b || {}, a || {});
+    for (const id of Object.keys(out)) {
+      const x = (a && a[id]) || {}, y = (b && b[id]) || {}, p = byId(id);
+      const o = out[id] = Object.assign({}, y, x);
+      if (x.st || y.st) {
+        const sa = x.st || "", sb = y.st || "", n = Math.max(sa.length, sb.length);
+        let st = "";
+        for (let i = 0; i < n; i++) { const c1 = sa[i] || "?", c2 = sb[i] || "?"; const c = c1 !== "?" ? c1 : c2; st += p && c !== "?" && +c !== p.sol[i] ? "?" : c; }
+        o.st = st;
+      }
+      o.loss = [...new Set([...(x.loss || []), ...(y.loss || [])])];
+      o.missTotal = Math.max(x.missTotal || 0, y.missTotal || 0);
+      if (x.view) o.view = x.view;
+    }
+    return out;
   }
   function signedIn(name, token, serverSave) {
     ACC.name = name; ACC.token = token; rememberAccount();
     KEY = ANON + ":" + name.toLowerCase();
-    useSave(serverSave || readLocal(KEY) || {});
+    const localMine = readLocal(KEY), localAnon = readLocal(ANON);
+    useSave(serverSave || localMine || {});
+    save.coop = mergeCoop(mergeCoop(save.coop, localMine && localMine.coop), localAnon && localAnon.coop);
     persist(true);
     renderHome(); accountPill(); refreshCoopList();
   }
@@ -584,9 +606,9 @@
   const coopDone = p => !!(save.coopDone[p.id] || (coopList && coopList[p.id] && coopList[p.id].done));
   const coopOpen = p => p.pi === 0 || coopDone(COOP.list[p.pi - 1]);
   function coopKnown(p) {
-    if (coopList && coopList[p.id] && coopList[p.id].total) return coopList[p.id].known / coopList[p.id].total;
-    const c = save.coop[p.id]; if (!c || !c.st) return 0;
-    let k = 0; for (const ch of c.st) if (ch !== "?") k++; return k / p.N;
+    const srv = coopList && coopList[p.id] && coopList[p.id].total ? coopList[p.id].known / coopList[p.id].total : 0;
+    const c = save.coop[p.id]; let k = 0; if (c && c.st) for (const ch of c.st) if (ch !== "?") k++;
+    return Math.max(srv, k / p.N);
   }
   function coopCard(w) {
     const card = document.createElement("article");
@@ -633,8 +655,10 @@
   const coopPrev = {}, coopFlash = [];
   let flashRaf = 0;
   function coopStateOf(p) {
-    const live = coopList && coopList[p.id] && coopList[p.id].state;
-    return live || (save.coop[p.id] && save.coop[p.id].st) || "";
+    const live = (coopList && coopList[p.id] && coopList[p.id].state) || "", mine = (save.coop[p.id] && save.coop[p.id].st) || "";
+    if (!live) return mine; if (!mine) return live;
+    let st = ""; for (let i = 0; i < p.N; i++) st += live[i] !== "?" ? live[i] : (mine[i] || "?");
+    return st;
   }
   function paintCoopPreviews(animate) {
     const t = now();
@@ -962,7 +986,7 @@
     if (G.coop) {
       let k = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) k++;
       const act = G.coop.active.filter(n => n !== ACC.name);
-      $("#gWorld").textContent = "Gemeinschaftswerk " + (G.pic.pi + 1) + " · " + Math.floor(k / G.N * 100) + " %" + (act.length ? " · " + act.join(", ") + (act.length === 1 ? " legt" : " legen") + " mit" : "");
+      $("#gWorld").textContent = "Gemeinschaftswerk " + (G.pic.pi + 1) + " · " + Math.floor(k / G.N * 100) + " %" + (G.coop.offline ? " · nicht verbunden, wird nachgesendet" : act.length ? " · " + act.join(", ") + (act.length === 1 ? " legt" : " legen") + " mit" : "");
     }
     lv.innerHTML = Array.from({ length: G.lives }, (_, k) => '<i class="' + (k < left ? "" : "gone") + '"></i>').join("");
     lv.setAttribute("aria-label", left + " von " + G.lives + (G.coop ? " Tropfen" : " Versuchen") + " übrig");
@@ -1698,11 +1722,17 @@
     c.missQ = 0; coopBusy = true;
     const j = await api({ action: "coop", name: ACC.name, token: ACC.token, id: g.pic.id, n: g.N, ver: c.ver, cells, miss });
     coopBusy = false;
-    if (!j.ok) { c.queue.unshift(...cells); c.missQ += miss; if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
+    if (!j.ok) { c.queue.unshift(...cells); c.missQ += miss; c.offline = true; hud(); if (j.status === 401) signedOut("Deine Anmeldung ist abgelaufen. Bitte melde dich neu an."); return; }
     if (G !== g) return;
     c.ver = j.ver; c.active = j.active || []; c.by = j.by || {}; c.miss = j.miss || {}; c.last = j.last || "";
     if (j.now) { c.off = j.now - Math.floor(Date.now() / 1000); c.loss = (j.loss || []).slice(); save.coop[g.pic.id] = Object.assign(save.coop[g.pic.id] || {}, { loss: c.loss.slice() }); }
-    if (j.state) coopMerge(j.state, j.recent || []);
+    if (j.state) {
+      coopMerge(j.state, j.recent || []);
+      const queued = new Set(c.queue.map(q => q[0])); let more = 0;
+      for (let i = 0; i < g.N && i < j.state.length; i++) if (g.st[i] >= 0 && j.state[i] === "?" && g.st[i] === g.pic.sol[i] && !queued.has(i)) { c.queue.push([i, g.st[i]]); more++; }
+      if (more) coopFlushSoon();
+    }
+    c.offline = false;
     hud();
   }
   // Steine der anderen übernehmen (nur solche, die zum Bild passen)
