@@ -1134,7 +1134,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"gemeinsam","name":"Gemeinschaftswerke","sub":"Riesige Szenen, an denen alle zusammen legen","special":true,"coop":true,"diff":{"pair":true,"remove":0.55,"maxPairs":80},"mood":["#2a2a4a","#12101e","#ffd8a8"],"music":{"root":60,"scale":[0,2,4,7,9]},
+  "id":"gemeinsam","name":"Gemeinschaftswerke","sub":"Riesige Szenen, an denen alle zusammen legen","special":true,"coop":true,"diff":{"pair":true,"remove":0.9,"maxPairs":600,"trivialFirst":true},"mood":["#2a2a4a","#12101e","#ffd8a8"],"music":{"root":60,"scale":[0,2,4,7,9]},
   pics: [
     {"id":"ballontal","title":"Das Tal der Ballone","riddle":"Ein ganzes Tal am frühen Morgen, und darüber steigen bunte Kugeln auf.","verse":"Wer hier gemeinsam Stein auf Stein gelegt hat, hat dem Morgen beim Aufgehen geholfen.","bg":["#7ab8f0","#ffe4c8"],"pal":{"S":"#ffffff","M":"#9a9ad0","J":"#a8d48a","I":"#7ab86a","H":"#5aa05a","G":"#3f8a4a","F":"#e8d07a","w":"#5aa8e0","v":"#9ad0f4","e":"#c8dc8a","p":"#e8d0a0","f":"#ffe066","q":"#ff9ac8","b":"#ffffff","B":"#f2e2c4","R":"#d8483a","D":"#7a5a9a","Y":"#ffe066","T":"#2f6a3a","U":"#4a8a4a","O":"#ff9a3a","P":"#e05aa8","L":"#7a6ae0","C":"#3fc0c8","K":"#5a3a2a","c":"#ffffff"}, art: [
         "...............................c........................................",

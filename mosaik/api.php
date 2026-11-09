@@ -230,7 +230,8 @@ switch ($action) {
       $c = $raw ? json_decode(substr($raw, strlen(GUARD)), true) : null;
       if (!is_array($c)) { $res[$id] = ['known' => 0, 'total' => 0, 'done' => 0, 'active' => []]; continue; }
       $active = []; foreach (($c['seen'] ?? []) as $nm => $t) if ($now - $t < 40) $active[] = $nm;
-      $res[$id] = ['known' => $c['n'] - substr_count($c['state'], '?'), 'total' => $c['n'], 'done' => $c['done'] ?? 0, 'active' => $active, 'by' => (object)($c['by'] ?? []), 'miss' => (object)($c['miss'] ?? []), 'last' => $c['last'] ?? ''];
+      $res[$id] = ['known' => $c['n'] - substr_count($c['state'], '?'), 'total' => $c['n'], 'done' => $c['done'] ?? 0, 'active' => $active, 'by' => (object)($c['by'] ?? []), 'miss' => (object)($c['miss'] ?? []), 'last' => $c['last'] ?? '', 'ver' => $c['ver'] ?? 0,
+        'state' => !empty($in['state']) && empty($c['done']) ? $c['state'] : null];
     }
     out(['ok' => true, 'list' => (object)$res]);
   }

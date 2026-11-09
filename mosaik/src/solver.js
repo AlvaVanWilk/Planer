@@ -207,9 +207,14 @@
       given[pick] = sol[pick];
       res = solve(H, W, clues, given, { pair, B });
     }
-    const order = [];
+    let order = [];
     for (let i = 0; i < N; i++) order.push(i);
     for (let i = N - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    // Auf Wunsch zuerst die trivialen Zahlen (0 und voller Block) entfernen: weniger Flächen zum stumpfen Ausfüllen
+    if (opts.trivialFirst) {
+      const triv = i => clues[i] === 0 || clues[i] === B[i].length;
+      order = order.filter(triv).concat(order.filter(i => !triv(i)));
+    }
     const maxRemove = Math.floor(N * (opts.remove == null ? 1 : opts.remove));
     let removed = 0;
     for (const i of order) {
