@@ -196,7 +196,6 @@ switch ($action) {
     foreach (['miss', 'loss'] as $k) if (!isset($c[$k]) || !is_array($c[$k])) $c[$k] = [];
     // Tropfen: verlorene Tropfen der letzten 2 Stunden
     $loss = array_values(array_filter($c['loss'][$who] ?? [], function ($t) use ($now) { return $now - $t < DROP_BACK; }));
-    if (count($loss) >= DROPS) $cells = [];   // keine Tropfen mehr: nur zuschauen
     $miss = max(0, min(DROPS - count($loss), (int)($in['miss'] ?? 0)));
     for ($k = 0; $k < $miss; $k++) { $loss[] = $now; }
     if ($miss) $c['miss'][$who] = ($c['miss'][$who] ?? 0) + $miss;
