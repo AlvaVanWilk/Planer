@@ -81,6 +81,9 @@ ${B}
 </html>
 `;
 fs.writeFileSync(path.join(root, "index.html"), page);
+// api.php bekommt denselben Stempel, damit man sieht, ob beide Dateien zusammenpassen
+const apiPath = path.join(root, "api.php");
+fs.writeFileSync(apiPath, fs.readFileSync(apiPath, "utf8").replace(/const API_VERSION = '[^']*';/, "const API_VERSION = '" + BUILD + "';"));
 console.log("index.html geschrieben,", Math.round(page.length / 1024), "KB");
 
 const fi = process.argv.indexOf("--fragment");
