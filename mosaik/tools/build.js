@@ -20,6 +20,8 @@ function diffFor(w, p) {
 const CACHE = path.join(__dirname, "puzzle-cache.json");
 const SOLVER_SIG = SV.hashStr(fs.readFileSync(path.join(root, "src/solver.js"), "utf8")).toString(36);
 let cache = {}; try { cache = JSON.parse(fs.readFileSync(CACHE, "utf8")); } catch (e) { /* neu */ }
+// Stand der Seite: Zeitpunkt des Baus (Lokalzeit Berlin), dient der Versionsprüfung im Spiel
+const BUILD = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Berlin" }).replace(" ", "T").slice(0, 16);
 const puzzles = {};
 let fail = 0;
 for (const w of global.MOSAIK_WORLDS) {
@@ -53,6 +55,7 @@ const js = [
   src("images.js"),
   src("solver.js"),
   "window.MOSAIK_PUZZLES = " + JSON.stringify(puzzles) + ";",
+  "window.MOSAIK_BUILD = \"" + BUILD + "\";",
   src("audio.js"),
   src("app.js"),
 ].join("\n").replace(/<\/script/gi, "<\\/script");
