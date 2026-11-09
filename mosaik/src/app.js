@@ -76,7 +76,7 @@
   const ACC = { online: false, canRegister: false, name: null, token: null, busy: false };
   const ACCKEY = "mosaik.konto";
   try { const a = JSON.parse(localStorage.getItem(ACCKEY) || "null"); if (a && a.name && a.token) { ACC.name = a.name; ACC.token = a.token; KEY = ANON + ":" + a.name.toLowerCase(); } } catch (e) { /* kein Konto gemerkt */ }
-  if (KEY !== ANON) { const s1 = readLocal(KEY); useSave(s1); }
+  if (KEY !== ANON) { const s1 = readLocal(KEY), s0 = readLocal(ANON); useSave(s1); if (s0 && s0.coop) save.coop = mergeCoop(save.coop, s0.coop); }
   async function api(body, timeout = 8000) {
     const ctl = window.AbortController ? new AbortController() : null;
     const tm = setTimeout(() => ctl && ctl.abort(), timeout);
@@ -2251,6 +2251,25 @@
     } catch (e) { /* Symbole sind Zierde */ }
   })();
   renderHome();
+  // Version anzeigen und prüfen, ob auf dem Webspace eine neuere liegt (Safari hält alte Seiten gern fest)
+  const BUILD = window.MOSAIK_BUILD || "";
+  $("#ver").textContent = BUILD ? "Version vom " + BUILD.slice(8, 10) + "." + BUILD.slice(5, 7) + "." + BUILD.slice(0, 4) + ", " + BUILD.slice(11, 16) + " Uhr" : "";
+  async function checkUpdate() {
+    if (location.protocol === "file:" || !BUILD) return;
+    try {
+      const r = await fetch("index.html?nocache=" + Date.now(), { cache: "no-store" });
+      const m = (await r.text()).match(/window\.MOSAIK_BUILD = "(\d{4}-[^"]+)"/);
+      if (!m || m[1] === BUILD) return;
+      let tried = ""; try { tried = sessionStorage.getItem("mosaik.update") || ""; } catch (e) { /* egal */ }
+      if (tried === m[1]) return;                         // nicht in einer Schleife neu laden
+      try { sessionStorage.setItem("mosaik.update", m[1]); } catch (e) { /* egal */ }
+      if (G) saveProg(); persist(true);
+      location.replace(location.pathname + "?v=" + encodeURIComponent(m[1]));
+    } catch (e) { /* kein Webspace oder offline */ }
+  }
+  checkUpdate();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && screen === "home") checkUpdate(); });
+  setInterval(() => { if (screen === "home" && !document.hidden) checkUpdate(); }, 10 * 60 * 1000);
   probeServer().then(on => {
     accountPill();
     if (!on) return;
