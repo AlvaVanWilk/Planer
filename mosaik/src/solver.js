@@ -119,14 +119,19 @@
     // Welche Zahlen ein Feld berühren (Blöcke sind symmetrisch).
     let pairSteps = 0, unknown = 0;
     for (let i = 0; i < N; i++) if (st[i] < 0) unknown++;
-    const dirty = new Uint8Array(N);
-    let queue = cl.slice();
-    cl.forEach(i => dirty[i] = 1);
+    const dirty = new Uint8Array(N), pdirty = new Uint8Array(N);
+    let queue = cl.slice(), pq = P ? cl.slice() : [];
+    cl.forEach(i => { dirty[i] = 1; if (P) pdirty[i] = 1; });
     const set = (x, v) => {
       if (st[x] >= 0) return;
       st[x] = v; unknown--;
-      for (const y of B[x]) if (clues[y] >= 0 && !dirty[y]) { dirty[y] = 1; queue.push(y); }
+      for (const y of B[x]) if (clues[y] >= 0) {
+        if (!dirty[y]) { dirty[y] = 1; queue.push(y); }
+        if (P && !pdirty[y]) { pdirty[y] = 1; pq.push(y); }
+      }
     };
+    // Erst alle Einzelschlüsse; nur wenn keiner mehr geht, ein Paarschluss. Paare werden nur dort
+    // neu geprüft, wo sich etwas geändert hat.
     for (;;) {
       while (queue.length) {
         const i = queue.pop(); dirty[i] = 0;
@@ -137,16 +142,17 @@
       }
       if (!unknown || !P) break;
       let found = false;
-      outer: for (const i of cl) {
+      while (pq.length && !found) {
+        const i = pq.pop(); pdirty[i] = 0;
         for (const j of P[i]) {
-          if (j < i) continue;
           const r = pairStep(B, clues, st, i, j);
           if (!r) continue;
           if (r.bad) return { ok: false, contradiction: true, st, pairSteps };
           pairSteps++;
           for (const [x, v] of r) set(x, v);
+          if (!pdirty[i]) { pdirty[i] = 1; pq.push(i); }
           found = true;
-          break outer;
+          break;
         }
       }
       if (!found) break;
