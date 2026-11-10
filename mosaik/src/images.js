@@ -7,7 +7,7 @@
 window.MOSAIK_WORLDS = [
 {
   id: "garten", name: "Morgengarten", sub: "Tau auf den Blättern",
-  diff: { pair: false, remove: 0.28, ramp: 0.02 },
+  diff: { texture: 0.15, pair: false, remove: 0.28, ramp: 0.02 },
   mood: ["#2c3b2a", "#16201a", "#b9e08f"],
   music: { root: 60, scale: [0, 2, 4, 7, 9] },
   pics: [
@@ -111,7 +111,7 @@ window.MOSAIK_WORLDS = [
 },
 {
   id: "meer", name: "Gezeitenmeer", sub: "Was die Wellen bringen",
-  diff: { pair: false, remove: 0.4, ramp: 0.02 },
+  diff: { texture: 0.06, pair: false, remove: 0.4, ramp: 0.02 },
   mood: ["#13324a", "#0a1a2a", "#7fd8e8"],
   music: { root: 62, scale: [0, 2, 4, 7, 9] },
   pics: [
@@ -227,7 +227,7 @@ window.MOSAIK_WORLDS = [
 },
 {
   id: "nacht", name: "Mondnacht", sub: "Wenn die Laternen angehen",
-  diff: { pair: true, remove: 0.5, ramp: 0.02, maxPairs: 6 },
+  diff: { texture: 0.06, pair: true, remove: 0.5, ramp: 0.02, maxPairs: 6 },
   mood: ["#251c4a", "#110c24", "#c8b6ff"],
   music: { root: 57, scale: [0, 3, 5, 7, 10] },
   pics: [
@@ -360,7 +360,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"fernweh","name":"Fernweh","sub":"Postkarten von unterwegs","diff":{"pair":true,"remove":0.57,"ramp":0.02,"maxPairs":9},"mood":["#3a2a2a","#1c1418","#ffc08a"],"music":{"root":65,"scale":[0,2,4,6,9]},
+  "id":"fernweh","name":"Fernweh","sub":"Postkarten von unterwegs","diff":{"texture":0.06,"pair":true,"remove":0.57,"ramp":0.02,"maxPairs":9},"mood":["#3a2a2a","#1c1418","#ffc08a"],"music":{"root":65,"scale":[0,2,4,6,9]},
   pics: [
     {"id":"ballon","title":"Heißluftballon","riddle":"Es fliegt ohne Flügel und hat sein Feuer immer dabei.","verse":"Ganz leise treibt er über die Felder, nur der Brenner faucht ab und zu.","bg":["#ffcf9e","#f59fb5"],"pal":{"R":"#e8414f","O":"#ff8c42","Y":"#ffd166","C":"#fff1d6","T":"#3fb8af","B":"#3d6fb6","P":"#8e5bd1","H":"#ffffff","K":"#6b4a3a","W":"#b07a4a","D":"#7a4f2c","c":"#fff4ec"}, art: [
         "................",
@@ -473,7 +473,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"kosmos","name":"Kosmos","sub":"Zwischen den Sternen","diff":{"pair":true,"remove":0.64,"ramp":0.02,"maxPairs":12},"mood":["#151a3a","#070914","#9fb4ff"],"music":{"root":60,"scale":[0,2,4,7,11]},
+  "id":"kosmos","name":"Kosmos","sub":"Zwischen den Sternen","diff":{"texture":0.06,"pair":true,"remove":0.64,"ramp":0.02,"maxPairs":12},"mood":["#151a3a","#070914","#9fb4ff"],"music":{"root":60,"scale":[0,2,4,7,11]},
   pics: [
     {"id":"rakete","title":"Rakete","riddle":"Sie zählt rückwärts, bevor sie losfliegt.","verse":"Drei, zwei, eins – und der Himmel wird ganz still.","bg":["#0b0f2c","#2b1b52"],"pal":{"R":"#e8414f","W":"#f4f1ea","S":"#c9c6d6","K":"#3a3f5c","G":"#7fd6ff","H":"#e8fbff","D":"#555a7a","O":"#ff8a3a","Y":"#ffe066","s":"#fff6c9","m":"#6f6aa8","p":"#5a4a8a"}, art: [
         "......m....s......",
@@ -598,7 +598,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"fabel","name":"Fabelreich","sub":"Wo die Sagen wohnen","diff":{"pair":true,"remove":0.69,"ramp":0.02,"maxPairs":16},"mood":["#2a1a30","#120a16","#ffb36a"],"music":{"root":62,"scale":[0,2,3,7,9]},
+  "id":"fabel","name":"Fabelreich","sub":"Wo die Sagen wohnen","diff":{"texture":0.06,"pair":true,"remove":0.69,"ramp":0.02,"maxPairs":16},"mood":["#2a1a30","#120a16","#ffb36a"],"music":{"root":62,"scale":[0,2,3,7,9]},
   pics: [
     {"id":"axolotl","title":"Axolotl","riddle":"Es lächelt immer und kann sich ein verlorenes Bein einfach nachwachsen lassen.","verse":"Ein Wassermolch, der beschlossen hat, für immer jung zu bleiben.","bg":["#9fe6e0","#3a8fb0"],"pal":{"P":"#ffb3c8","H":"#ffd2de","L":"#ffe4ec","G":"#e8508a","F":"#ff86b0","K":"#2a1530","W":"#ffffff","C":"#ff7aa0","M":"#c4507a","o":"#d8fbff","g":"#4fae7a"}, art: [
         ".................o..",
@@ -735,7 +735,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"dschungel","name":"Dschungel","sub":"Unter dem grünen Dach","diff":{"pair":true,"remove":0.71,"ramp":0.02,"maxPairs":20},"mood":["#1f3a24","#0c1a10","#9fe07a"],"music":{"root":62,"scale":[0,3,5,7,10]},
+  "id":"dschungel","name":"Dschungel","sub":"Unter dem grünen Dach","diff":{"texture":0.06,"pair":true,"remove":0.71,"ramp":0.02,"maxPairs":20},"mood":["#1f3a24","#0c1a10","#9fe07a"],"music":{"root":62,"scale":[0,3,5,7,10]},
   pics: [
     {"id":"frosch","title":"Pfeilgiftfrosch","riddle":"Er ist kaum größer als ein Daumennagel und trägt die Farbe des Himmels als Warnung.","verse":"Wer so leuchtet, muss sich vor niemandem verstecken.","bg":["#1d5a3a","#0c2a1a"],"pal":{"B":"#2f86f0","D":"#1d4fb8","K":"#12161f","W":"#ffffff","T":"#8fd0ff","L":"#46a84e","V":"#2c7a34","d":"#7fe0a0","l":"#2a7a42"}, art: [
         "ll................ll",
@@ -872,7 +872,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"wunderkammer","name":"Wunderkammer","sub":"Schätze hinter Glas","diff":{"pair":true,"remove":0.73,"ramp":0.02,"maxPairs":24},"mood":["#3a2418","#160c08","#f2c48a"],"music":{"root":58,"scale":[0,2,5,7,9]},
+  "id":"wunderkammer","name":"Wunderkammer","sub":"Schätze hinter Glas","diff":{"texture":0.06,"pair":true,"remove":0.73,"ramp":0.02,"maxPairs":24},"mood":["#3a2418","#160c08","#f2c48a"],"music":{"root":58,"scale":[0,2,5,7,9]},
   pics: [
     {"id":"sanduhr","title":"Sanduhr","riddle":"Sie arbeitet nur, wenn man sie auf den Kopf stellt.","verse":"Jedes Körnchen fällt genau einmal, und dann dreht man sie wieder um.","bg":["#3a2420","#160c0a"],"pal":{"J":"#cfe6ee","S":"#f2c46a","H":"#8a5a34","D":"#5a3820","g":"#3a4048","h":"#8a9aa8","s":"#6a4a3a"}, art: [
         "..D................D..",
@@ -1021,7 +1021,7 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"panorama","name":"Panoramen","sub":"Landschaften im Breitformat","special":true,"diff":{"pair":true,"remove":0.57,"ramp":0.02,"maxPairs":9},"mood":["#2a3550","#101624","#ffc8a0"],"music":{"root":64,"scale":[0,2,4,7,9]},
+  "id":"panorama","name":"Panoramen","sub":"Landschaften im Breitformat","special":true,"diff":{"texture":0.06,"pair":true,"remove":0.57,"ramp":0.02,"maxPairs":9},"mood":["#2a3550","#101624","#ffc8a0"],"music":{"root":64,"scale":[0,2,4,7,9]},
   pics: [
     {"id":"bergsee","title":"Bergsee im Morgenrot","riddle":"Zwei Gipfel stehen hier, und doch sieht man sie viermal.","verse":"So früh am Morgen ist das Wasser so still, dass der Himmel zweimal aufgeht.","bg":["#ff9a8a","#ffe2bc"],"pal":{"O":"#ffd46a","S":"#fff4f4","M":"#8a6ab8","N":"#5a4a8e","T":"#1f4a3a","G":"#3a6a42","R":"#6a5a9a","Q":"#d8c8e8","U":"#1a3a34","P":"#ffe08a","w":"#7aa8d8","v":"#b8d8f4"}, art: [
         "........................",
@@ -1134,9 +1134,146 @@ window.MOSAIK_WORLDS = [
   ],
 },
 {
-  "id":"gemeinsam","name":"Gemeinschaftswerke","sub":"Riesige Szenen, an denen alle zusammen legen","special":true,"coop":true,"diff":{"pair":true,"remove":0.9,"maxPairs":600,"trivialFirst":true},"mood":["#2a2a4a","#12101e","#ffd8a8"],"music":{"root":60,"scale":[0,2,4,7,9]},
+  "id":"filigran","name":"Filigran","sub":"Linien, Muster, Netze","special":true,"diff":{"texture":0.06,"pair":true,"remove":0.62,"ramp":0.02,"maxPairs":14},"mood":["#24304a","#0e1420","#c8e0ff"],"music":{"root":67,"scale":[0,2,4,7,9]},
   pics: [
-    {"id":"ballontal","title":"Das Tal der Ballone","riddle":"Ein ganzes Tal am frühen Morgen, und darüber steigen bunte Kugeln auf.","verse":"Wer hier gemeinsam Stein auf Stein gelegt hat, hat dem Morgen beim Aufgehen geholfen.","bg":["#7ab8f0","#ffe4c8"],"pal":{"S":"#ffffff","M":"#9a9ad0","J":"#a8d48a","I":"#7ab86a","H":"#5aa05a","G":"#3f8a4a","F":"#e8d07a","w":"#5aa8e0","v":"#9ad0f4","e":"#c8dc8a","p":"#e8d0a0","f":"#ffe066","q":"#ff9ac8","b":"#ffffff","B":"#f2e2c4","R":"#d8483a","D":"#7a5a9a","Y":"#ffe066","T":"#2f6a3a","U":"#4a8a4a","O":"#ff9a3a","P":"#e05aa8","L":"#7a6ae0","C":"#3fc0c8","K":"#5a3a2a","c":"#ffffff"}, art: [
+    {"id":"schneeflocke","title":"Schneeflocke","riddle":"Sechs Arme, kein Körper, und keine gleicht der anderen.","verse":"Fällt sie auf den Ärmel, hat man genau einen Atemzug, um sie zu bewundern.","bg":["#1a2a5a","#3a5a9a"],"pal":{"W":"#ffffff","B":"#bfe6ff","L":"#7ac8ff"}, art: [
+        "..........L.........",
+        "..........W.........",
+        "........BBWB........",
+        ".........BB.........",
+        "...B...B..W.B...B...",
+        ".LWBB.B.BBWB.B.BBWL.",
+        "...BB.B...B..B.BB...",
+        "..BBWWB...W..BWWBB..",
+        ".....BBWLLLLWBB.....",
+        "...BB...LWWL...BB...",
+        "...BB...LWWL...BB...",
+        ".....BBWLLLWWBB.....",
+        "..BBWWB...W..BWWBB..",
+        "...BB.B...B..B.BB...",
+        ".LWBB.B.BBWB.B.BBWL.",
+        "...B...B..W.B...B...",
+        ".........BB.........",
+        "........BBWB........",
+        "..........W.........",
+        "..........L.........",
+      ] },
+    {"id":"pusteblume","title":"Pusteblume","riddle":"Ein einziger Atemzug, und hundert Fallschirme fliegen davon.","verse":"Wer pustet und sich etwas wünscht, darf es niemandem verraten.","bg":["#3a4a7a","#c88a7a"],"pal":{"G":"#5a9a4a","L":"#7ac06a","F":"#d8d2c4","W":"#ffffff","K":"#9a8a5a"}, art: [
+        "....................",
+        "..........W.......W.",
+        ".......W..F..W...F..",
+        ".......F..F..F..W...",
+        "........F.F.F..F...W",
+        "....W...F.F.F..W....",
+        "......FF.FFF.FF..W..",
+        "........FKKFF.......",
+        "......FF.FKF.FF.....",
+        ".....W..F.F.F...W...",
+        "........F.F.F.......",
+        ".......F..F..F......",
+        ".......W..F..W......",
+        "..........W.........",
+        "..........G.........",
+        "..........G.........",
+        "..........G.........",
+        "........L.G.........",
+        ".........LG.L.......",
+        "..........GL........",
+      ] },
+    {"id":"spinnennetz","title":"Spinnennetz im Morgentau","riddle":"Ein Netz, das niemand geknüpft hat, der Hände besitzt.","verse":"Über Nacht gewebt, am Morgen mit Perlen behängt.","bg":["#1e3a4a","#4a6a6a"],"pal":{"S":"#e8f0f8","D":"#9ae4ff","K":"#2a1a2a"}, art: [
+        ".....SS......S......",
+        "......SSSSSSSS......",
+        ".....SSS....SSS.....",
+        "....S..S....S..S....",
+        "...S...SSSSSS...S...",
+        "..S...SSS..S.S...S.S",
+        "SSS..S..S..S..S..SSS",
+        ".SSSS...SSSS..SSSDS.",
+        ".S..SSSS.SS.SSSS..S.",
+        ".S..S..SSSSSD..S..S.",
+        ".S..S..SSSSSS..S..S.",
+        ".S..SSSS.SSKKSSS..S.",
+        ".SDSSS..SSSK...DSSS.",
+        "SSS..S..S..S..S..SSS",
+        "S.S...S.S..SSS...S..",
+        "...S...SSSSSS...S...",
+        "....S..S....S..S....",
+        ".....SSS....SSS.....",
+        "......SSSSSSSS......",
+        "......S......SS.....",
+      ] },
+    {"id":"farn","diff":{"maxPairs":36},"title":"Farnwedel","riddle":"Ein Blatt, das sich langsam entrollt wie eine Geige ohne Saiten.","verse":"Farne gab es schon, als noch Dinosaurier durch die Wälder gingen.","bg":["#1e3a2a","#0e2018"],"pal":{"S":"#5a8a3a","G":"#6ac85a","L":"#b8e88a","d":"#3a6a4a"}, art: [
+        "....................",
+        "..........S..L......",
+        ".........LS.G....d..",
+        "..d.......GS.GL.....",
+        "........LG.SG...L...",
+        "........L.GS..GG....",
+        ".........GG.SG..L...",
+        "........L..GS.GG....",
+        ".........GG.SG..GL..",
+        ".......LG..GS.GG..L.",
+        "......L..GG.SG..GG..",
+        ".......GG..GS.GG.GL.",
+        "....LG...GG.SG.GG..L",
+        "...L..GG...GSGG..GG.",
+        "....GG..GG..G..GG...",
+        "......GG..GS.GG.....",
+        "........GG.SG....d..",
+        "...d......GS........",
+        "..........S.........",
+        "..........S.........",
+      ] },
+    {"id":"rosette","title":"Rosettenfenster","riddle":"Ein Rad aus Licht, das sich nur dreht, wenn die Sonne wandert.","verse":"Durch das bunte Glas fällt der Nachmittag in Farben auf den Steinboden.","bg":["#14101e","#241a30"],"pal":{"R":"#3a3446","Y":"#ffe066","E":"#ff8a3a","e":"#c8343a","a":"#2a6ad8","b":"#d8343a","c":"#2fa86a","d":"#e8b83a"}, art: [
+        ".......RRRRRR.......",
+        ".....RRRaRbbRRR.....",
+        "....RRaaaRbbbbRRR...",
+        "...RdRRaaRbbbRRcRR..",
+        "..RdddRRaRbbRRcccR..",
+        ".RRRdddRRRRRRcccRRR.",
+        ".RcRRddRREeRRccRRdR.",
+        "RRccRRReEeEeERRRddRR",
+        "RccccRREeEeEeRRddddR",
+        "RccccREeEYYeEeRddddR",
+        "RRRRRReEeYYEeERRRRRR",
+        "RbbbbRReEeEeERRaaaaR",
+        "RRbbRRREeEeERRRRaaRR",
+        ".RbRRaaRReERRbbRRaR.",
+        ".RRRaaaRRRRRRbbbRRR.",
+        "..RaaaRRddRcRRbbbR..",
+        "..RRaRRdddRccRRbR...",
+        "...RRRddddRcccRR....",
+        ".....RRRddRcRRR.....",
+        ".......RRRRRR.......",
+      ] },
+    {"id":"traumfaenger","title":"Traumfänger","riddle":"Ein Netz über dem Bett, das nur die schönen Dinge durchlässt.","verse":"Die bösen Träume bleiben in den Fäden hängen und vergehen im Morgenlicht.","bg":["#2a1a4a","#5a3a6a"],"pal":{"H":"#c89a62","N":"#f2e2c4","P":"#4ad0c0","F":"#ff9ac8","E":"#ffd27a"}, art: [
+        "....................",
+        ".......HHHHHHH......",
+        ".....HH..NN..HH.....",
+        "....HH...NN...HH....",
+        "....H...N..N...H....",
+        "...HNNNNNNNNNNNNH...",
+        "...H.NN.N..N.NN.H...",
+        "...H..NN..P.NN..H...",
+        "...H...NNNNNN...H...",
+        "...HH..NNNNNN..HH...",
+        "....H.NNN..NNN.H....",
+        "....HHN......NHH....",
+        ".....HH......HH.....",
+        ".....NHHHHNHH.N.....",
+        ".....P....P...P.....",
+        ".....N....N...N.....",
+        ".....N....N...N.....",
+        ".....F....N...F.....",
+        "....F.F...E..F.F....",
+        ".....F...E.E..F.....",
+      ] },
+  ],
+},
+{
+  "id":"gemeinsam","name":"Gemeinschaftswerke","sub":"Riesige Szenen, an denen alle zusammen legen","special":true,"coop":true,"diff":{"texture":0.06,"pair":true,"remove":0.9,"maxPairs":600,"trivialFirst":true},"mood":["#2a2a4a","#12101e","#ffd8a8"],"music":{"root":60,"scale":[0,2,4,7,9]},
+  pics: [
+    {"id":"ballontal","texture":false,"title":"Das Tal der Ballone","riddle":"Ein ganzes Tal am frühen Morgen, und darüber steigen bunte Kugeln auf.","verse":"Wer hier gemeinsam Stein auf Stein gelegt hat, hat dem Morgen beim Aufgehen geholfen.","bg":["#7ab8f0","#ffe4c8"],"pal":{"S":"#ffffff","M":"#9a9ad0","J":"#a8d48a","I":"#7ab86a","H":"#5aa05a","G":"#3f8a4a","F":"#e8d07a","w":"#5aa8e0","v":"#9ad0f4","e":"#c8dc8a","p":"#e8d0a0","f":"#ffe066","q":"#ff9ac8","b":"#ffffff","B":"#f2e2c4","R":"#d8483a","D":"#7a5a9a","Y":"#ffe066","T":"#2f6a3a","U":"#4a8a4a","O":"#ff9a3a","P":"#e05aa8","L":"#7a6ae0","C":"#3fc0c8","K":"#5a3a2a","c":"#ffffff"}, art: [
         "...............................c........................................",
         "..........................cccccccc......................................",
         ".........................cccccccccc..........LL.........................",

@@ -24,9 +24,10 @@
       const sol = new Int8Array(N), col = new Array(N), rgbs = new Array(N);
       const b0 = hex(p.bg[0]), b1 = hex(p.bg[1]);
       let nFill = 0; const acc = [0, 0, 0];
+      const mask = PUZ[p.id] && PUZ[p.id].m;
       for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
         const ch = p.art[r][c], i = r * W + c;
-        const fill = ch !== "." && !(ch >= "a" && ch <= "z");
+        const fill = mask ? mask[i] === "1" : ch !== "." && !(ch >= "a" && ch <= "z");
         const a = ch === "." ? mix(b0, b1, H > 1 ? r / (H - 1) : 0) : hex(p.pal[ch]);
         sol[i] = fill ? 1 : 0; rgbs[i] = a; col[i] = rgb(a);
         if (fill) { nFill++; acc[0] += a[0]; acc[1] += a[1]; acc[2] += a[2]; }

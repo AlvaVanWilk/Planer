@@ -228,7 +228,48 @@
     return { clues, given, pairSteps: fin.pairSteps, ok: fin.ok };
   }
 
-  const api = { rng, hashStr, blocks, countClues, solve, hint, build, singleStep, pairStep };
+  /* Textur: verteilt in einheitlichen Flächen sparsam Glas-Funken (im Leeren) und matte Lücken
+     (im Gefüllten), bis höchstens `target` der Felder in einem einheitlichen 3×3-Block liegen.
+     Die Farben des Bildes bleiben unberührt; Umrisse und Details werden geschont. */
+  function texture(art, target, seed) {
+    const H = art.length, W = art[0].length, N = H * W, B = blocks(H, W), R = rng(seed || 1);
+    const ch = (r, c) => art[r][c];
+    const sol = new Int8Array(N);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) { const x = ch(r, c); sol[r * W + c] = x !== "." && !(x >= "a" && x <= "z") ? 1 : 0; }
+    // geschützt: Felder an Farbgrenzen (Umrisse, Augen, Details)
+    const prot = new Uint8Array(N);
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      const x = ch(r, c);
+      for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) { const rr = r + dr, cc = c + dc; if (rr >= 0 && cc >= 0 && rr < H && cc < W && ch(rr, cc) !== x) prot[r * W + c] = 1; }
+    }
+    const sum = new Int16Array(N);
+    const recount = i => { let s = 0; for (const j of B[i]) s += sol[j]; sum[i] = s; };
+    for (let i = 0; i < N; i++) recount(i);
+    const uni = i => sum[i] === 0 || sum[i] === B[i].length;
+    let nUni = 0; for (let i = 0; i < N; i++) if (uni(i)) nUni++;
+    const jitter = new Float32Array(N); for (let i = 0; i < N; i++) jitter[i] = R() * 0.5;
+    let guard = 0;
+    while (nUni > target * N && guard++ < N) {
+      let best = -1, bestScore = -1e9;
+      for (let i = 0; i < N; i++) {
+        let fix = 0, make = 0;
+        for (const j of B[i]) {
+          const n = B[j].length, s = sum[j], s2 = s + (sol[i] ? -1 : 1);
+          if (s === 0 || s === n) fix++;
+          else if (s2 === 0 || s2 === n) make++;
+        }
+        if (!fix) continue;
+        const score = fix - make * 1.2 - (prot[i] ? 2.5 : 0) + jitter[i];
+        if (score > bestScore) { bestScore = score; best = i; }
+      }
+      if (best < 0) break;
+      sol[best] ^= 1;
+      for (const j of B[best]) { const was = uni(j); recount(j); const is = uni(j); nUni += (is ? 1 : 0) - (was ? 1 : 0); }
+    }
+    return { sol, uniform: nUni / N };
+  }
+
+  const api = { rng, hashStr, blocks, countClues, solve, hint, build, singleStep, pairStep, texture };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MosaikSolver = api;
 })(typeof window !== "undefined" ? window : globalThis);
