@@ -1000,10 +1000,14 @@
     let known = 0; for (let i = 0; i < G.N; i++) if (G.st[i] >= 0) known++;
     $("#gProg").style.width = (known / G.N * 100) + "%";
     $("#tUndo").disabled = !G.undo.length;
-    const hc = $("#hintCnt"); hc.textContent = G.hints; hc.style.display = G.hints ? "grid" : "none";
+    const hc = $("#hintCnt"), tl = tipsLeft(); hc.textContent = tl; hc.style.display = G.coop ? "none" : "grid";
+    $("#tHint").classList.toggle("spent", G.coop ? dropsLeft() <= 0 : tl <= 0);
   }
   // Versuche je Bild: 3 bei kleinen Rastern, 4 bei 15–16, 5 bei 18–20
   function livesFor(pic) { return 3 + Math.floor((Math.sqrt(pic.W * pic.H) - 10) / 4); }
+  // Tipps je Bild: so viele wie Versuche. Im Gemeinschaftswerk kostet jeder Tipp einen Familientropfen.
+  const tipsFor = livesFor;
+  function tipsLeft() { return G.coop ? dropsLeft() : Math.max(0, tipsFor(G.pic) - G.hints); }
   function starsFor(g) { const pen = (g.zauber ? g.mistakes : 0) + g.hints; return pen === 0 ? 3 : pen <= 2 ? 2 : 1; }
 
   function setCell(i, v, stroke, delay = 0) {
@@ -1336,16 +1340,35 @@
       afterChange();
       return;
     }
+    if (G.coop) { if (dropsLeft() <= 0) { coopWaitToast(); return; } }
+    else if (tipsLeft() <= 0) {
+      AU.ui();
+      toast("Für dieses Bild sind alle <b>" + tipsFor(G.pic) + " Tipps</b> verbraucht. Jedes Bild lässt sich ohne Raten lösen: Am besten fängst du bei den Zahlen am Rand der schon gelösten Stellen an.", 6500);
+      return;
+    }
     if (!G.zauber) {
       for (let i = 0; i < G.N; i++) if (st[i] >= 0 && st[i] !== sol[i]) {
         G.hint = { wrong: i, t: now() }; G.hints++; AU.hint();
-        toast("Hier hat sich ein Fehler eingeschlichen. Tippe noch einmal auf die Glühbirne, um ihn zu beheben.", 5200);
+        const tl = tipsLeft();
+        toast("Hier hat sich ein Fehler eingeschlichen. Tippe noch einmal auf die Glühbirne, um ihn zu beheben.<br>" + (tl ? "Noch " + tl + (tl === 1 ? " Tipp" : " Tipps") + " für dieses Bild." : "Das war dein letzter Tipp für dieses Bild."), 5200);
         hud(); kick(); return;
       }
     }
     const h = SV.hint(G.pic.H, G.pic.W, clues, st, G.lastI);
     if (!h) { toast("Hier gibt es gerade nichts zu schließen."); return; }
     G.hints++; G.hint = Object.assign(h, { t: now() }); AU.hint();
+    let cost = "";
+    if (G.coop) {
+      // Der Tipp kostet einen eigenen Familientropfen (zählt wie ein Fehler)
+      G.coop.loss.push(srvNow()); G.coop.missQ++;
+      if (!coopOnline()) { const cs = save.coop[G.pic.id] = save.coop[G.pic.id] || {}; cs.missTotal = (cs.missTotal || 0) + 1; }
+      save.coop[G.pic.id] = Object.assign(save.coop[G.pic.id] || {}, { loss: G.coop.loss.slice() }); persist();
+      coopFlushSoon();
+      cost = "<br>Dieser Tipp hat einen Familientropfen gekostet.";
+    } else {
+      const tl = tipsLeft();
+      cost = "<br>" + (tl ? "Noch " + tl + (tl === 1 ? " Tipp" : " Tipps") + " für dieses Bild." : "Das war dein letzter Tipp für dieses Bild.");
+    }
     const B = G.B;
     if (h.kind === "single") {
       const i = h.clues[0], k = clues[i];
@@ -1355,10 +1378,10 @@
       else if (f === k) msg = `Die <b>${k}</b> hat schon alle ${k} gefüllten Felder. Der Rest ihres Blocks bleibt leer.`;
       else if (k === B[i].length) msg = `Die <b>${k}</b> füllt ihren ganzen Block.`;
       else msg = `Die <b>${k}</b> braucht noch ${k - f} ${k - f === 1 ? "Feld" : "Felder"} und hat genau ${u} frei. Also alle füllen.`;
-      toast(msg + "<br>Noch einmal tippen trägt es ein.", 6500);
+      toast(msg + "<br>Noch einmal tippen trägt es ein." + cost, 6500);
     } else {
       const [a, b] = h.clues;
-      toast(`Vergleiche die <b>${clues[a]}</b> und die <b>${clues[b]}</b>: Ihre Blöcke überlappen. Zusammen legen sie die markierten Felder fest.<br>Noch einmal tippen trägt es ein.`, 7500);
+      toast(`Vergleiche die <b>${clues[a]}</b> und die <b>${clues[b]}</b>: Ihre Blöcke überlappen. Zusammen legen sie die markierten Felder fest.<br>Noch einmal tippen trägt es ein.` + cost, 7500);
     }
     hud(); kick();
   }
@@ -1814,7 +1837,7 @@
   function openCoopHelp() {
     const el = openSheet(`<h2>Gemeinsam legen</h2>
       <p>Dieses Mosaik ist riesig: ${G ? G.pic.W + "×" + G.pic.H : "72×48"} Felder. Alle aus der Familie legen am <b>selben Bild</b>, jederzeit und gleichzeitig. Was andere legen, erscheint nach ein paar Sekunden auch bei dir, kurz leuchtend mit ihrem Namen.</p>
-      <p>Es bleiben nur Steine liegen, die stimmen, darum kann niemand etwas kaputt machen. Jedes Feld wird von Hand gelegt, auch die leeren. Jede Person hat <b>4 eigene Familientropfen</b>: Ein Fehler kostet einen, und jeder verlorene kommt nach <b>2 Stunden</b> zurück. Ohne Tropfen kann man zuschauen und schieben.</p>
+      <p>Es bleiben nur Steine liegen, die stimmen, darum kann niemand etwas kaputt machen. Jedes Feld wird von Hand gelegt, auch die leeren. Jede Person hat <b>4 eigene Familientropfen</b>: Ein Fehler oder ein Tipp der Glühbirne kostet einen, und jeder verlorene kommt nach <b>2 Stunden</b> zurück. Ohne Tropfen kann man zuschauen und schieben.</p>
       <p>Zum Bewegen: das Werkzeug <b>Schieben</b> (die Hand), die <b>Pfeile</b> am Rand, die kleine <b>Karte</b> unten links oder <b>zwei Finger</b> zum Schieben und Zoomen. Am Computer: Mausrad schiebt, Strg + Mausrad zoomt.</p>
       <div class="acts"><button class="pill primary" id="chClose">Los geht's</button></div>`);
     $("#chClose").onclick = () => { AU.ui(); closeSheet(); };
@@ -2178,7 +2201,7 @@
       <canvas class="demo" width="460" height="460"></canvas>
       <p>Hinter jedem Raster steckt ein Bild. Jede <b>Zahl</b> sagt, wie viele Felder in ihrem <b>3×3-Block</b> zum Bild gehören. Das Feld mit der Zahl zählt selbst mit.</p>
       <p>Mit <b>Füllen</b> legst du Bildsteine, mit <b>Leer</b> markierst du Felder, die frei bleiben. Du kannst mit dem Finger über mehrere Felder <b>ziehen</b>. <b>Gedrückt halten</b> markiert ein Feld immer als leer, egal welches Werkzeug gewählt ist – hältst du und ziehst dann weiter, wird die ganze Strecke leer. Am Computer: linke Maustaste für das Werkzeug, <b>rechte Maustaste</b> für leer.</p>
-      <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein.</p>
+      <p>Felder mit Zahl sind ganz normale Felder: Auch sie sind entweder gefüllt oder leer. Die <b>Glühbirne</b> zeigt dir den nächsten Schluss, ein zweites Tippen trägt ihn ein. Tipps gibt es pro Bild nur wenige (die Zahl an der Glühbirne), sie sind für den Notfall gedacht.</p>
       <p>Im Modus <b>Farbenzauber</b> leuchtet jeder richtige Stein sofort in seiner Farbe auf. Ein Fehler kostet einen Versuch (oben die kleinen Tropfen), sind alle aufgebraucht, beginnt das Bild von vorn. Fehler und Tipps kosten außerdem Sterne. Im Modus <b>Klassisch</b> liegen gesetzte Steine wie im Heft als schwarzer Onyx, die Farben erscheinen erst am Ende, und zwei Finger tippen macht den letzten Zug rückgängig.</p>
       <div class="acts"><button class="pill primary" id="hClose">Los geht's</button></div>`);
     demo(el.querySelector("canvas"));

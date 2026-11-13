@@ -128,6 +128,8 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .seg .sw { width: 26px; height: 26px; background: var(--gem-icon) center / contain no-repeat; }
 .seg .sx { width: 26px; height: 26px; background: var(--hole-icon) center / contain no-repeat; }
 #tHint { position: relative; }
+#tHint.spent { opacity: .45; }
+#tHint.spent .cnt { background: rgba(255,255,255,.25); color: #fff; }
 #tHint .cnt { position: absolute; right: -4px; top: -4px; min-width: 18px; height: 18px; border-radius: 9px; background: var(--pearl); color: #1d1830; font-size: 11px; font-weight: 500; display: none; place-items: center; padding: 0 4px; }
 .toast { position: absolute; left: 50%; bottom: 100%; transform: translate(-50%, 8px); width: max-content; max-width: min(520px, 90vw);
   padding: 12px 18px; border-radius: 16px; background: rgba(20, 16, 30, .82); border: 1px solid var(--line); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);

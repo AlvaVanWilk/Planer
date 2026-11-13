@@ -14,7 +14,7 @@ const MAX_SAVE_BYTES = 300000;   // Größe eines Spielstands
 const MAX_TOKENS = 12;           // gleichzeitig angemeldete Geräte je Konto
 const LOCK_AFTER = 8;            // Fehlversuche bis zur Sperre
 const LOCK_SECONDS = 300;        // Dauer der Sperre
-const API_VERSION = '2026-11-10T13:15';            // wird beim Bauen gesetzt
+const API_VERSION = '2026-11-13T02:05';            // wird beim Bauen gesetzt
 const DROPS = 4;                 // Familientropfen je Person im Gemeinschaftswerk
 const DROP_BACK = 7200;          // ein verlorener Tropfen kommt nach 2 Stunden zurück
 
